@@ -1,0 +1,18 @@
+services:
+  postgres:
+    ports: ["5432:5432"]
+  redis:
+    ports: ["6379:6379"]
+  minio:
+    ports: ["9000:9000", "9001:9001"]
+  omnisocial-api:
+    environment: { NODE_ENV: development }
+    ports: ["4000:4000"]
+  omnisocial-worker:
+    environment: { NODE_ENV: development }
+    ports: ["4101:4101"]
+  omnisocial-scheduler:
+    environment: { NODE_ENV: development }
+    ports: ["4102:4102"]
+  omnisocial-frontend:
+    ports: ["3000:3000"]

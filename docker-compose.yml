@@ -1,0 +1,137 @@
+name: omnisocial
+
+x-app-env: &app-env
+  NODE_ENV: ${NODE_ENV:-development}
+  DATABASE_URL: postgresql://${POSTGRES_USER:-omnisocial}:${POSTGRES_PASSWORD:-omnisocial_dev}@postgres:5432/${POSTGRES_DB:-omnisocial}?schema=public
+  REDIS_URL: redis://redis:6379
+  JWT_SECRET: ${JWT_SECRET:-development-only-secret-change-in-production}
+  JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-development-refresh-secret-change-in-production}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY:-replace-with-32-byte-base64-key}
+  S3_ENDPOINT: http://minio:9000
+  S3_REGION: us-east-1
+  S3_BUCKET: omnisocial
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:-omnisocial}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:-omnisocial_dev_secret}
+  APP_URL: ${APP_URL:-http://localhost:8080}
+  ZALO_CLIENT_ID: ${ZALO_CLIENT_ID:-}
+  ZALO_CLIENT_SECRET: ${ZALO_CLIENT_SECRET:-}
+  FACEBOOK_CLIENT_ID: ${FACEBOOK_CLIENT_ID:-}
+  FACEBOOK_CLIENT_SECRET: ${FACEBOOK_CLIENT_SECRET:-}
+  TIKTOK_CLIENT_ID: ${TIKTOK_CLIENT_ID:-}
+  TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:-}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-omnisocial}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-omnisocial_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-omnisocial}
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U ${POSTGRES_USER:-omnisocial} -d ${POSTGRES_DB:-omnisocial}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [omnisocial]
+
+  redis:
+    image: redis:7-alpine
+    command: [redis-server, --appendonly, "yes"]
+    volumes: [redis_data:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [omnisocial]
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-omnisocial}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-omnisocial_dev_secret}
+    volumes: [minio_data:/data]
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:9000/minio/health/live]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [omnisocial]
+
+  omnisocial-api:
+    build: { context: ., dockerfile: infrastructure/docker/api.Dockerfile }
+    environment: { <<: *app-env, PORT: 4000 }
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://localhost:4000/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [omnisocial]
+
+  omnisocial-worker:
+    build: { context: ., dockerfile: infrastructure/docker/worker.Dockerfile }
+    environment: { <<: *app-env, WORKER_HEALTH_PORT: 4101 }
+    depends_on:
+      omnisocial-api: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://localhost:4101').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [omnisocial]
+
+  omnisocial-scheduler:
+    build: { context: ., dockerfile: infrastructure/docker/scheduler.Dockerfile }
+    environment: { <<: *app-env, SCHEDULER_HEALTH_PORT: 4102 }
+    depends_on:
+      omnisocial-api: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://localhost:4102').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [omnisocial]
+
+  omnisocial-frontend:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/web.Dockerfile
+      args: { NEXT_PUBLIC_API_URL: /api/v1 }
+    depends_on:
+      omnisocial-api: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://localhost:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [omnisocial]
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports: ["${HTTP_PORT:-8080}:80"]
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      omnisocial-frontend: { condition: service_healthy }
+      omnisocial-api: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1/nginx-health]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [omnisocial]
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+
+networks:
+  omnisocial:
+    driver: bridge

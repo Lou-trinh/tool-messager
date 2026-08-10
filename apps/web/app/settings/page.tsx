@@ -1,0 +1,2 @@
+import { FeaturePage } from '@/components/feature-page';
+export default function Page() { return <FeaturePage title="Cài đặt workspace" subtitle="Thành viên, roles, integrations, security và data retention." eyebrow="Governance" items={[{ title: 'Roles & access', text: 'OWNER, ADMIN, MANAGER, OPERATOR và VIEWER.', status: 'RBAC' }, { title: 'Data retention', text: 'Messages, media, audit và sync history theo policy.', status: 'Policy' }, { title: 'Security', text: 'Sessions, token rotation, 2FA readiness và secret encryption.', status: 'Hardened' }]} />; }

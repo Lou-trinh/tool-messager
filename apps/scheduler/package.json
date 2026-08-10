@@ -1,0 +1,8 @@
+{
+  "name": "@omni/scheduler",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": { "build": "tsc -p tsconfig.json", "dev": "tsx watch src/main.ts", "start": "node dist/main.js", "typecheck": "tsc -p tsconfig.json --noEmit" },
+  "dependencies": { "@omni/database": "*", "@omni/queue": "*", "bullmq": "^6.0.9", "dotenv": "^17.2.3", "ioredis": "^5.11.1" }
+}

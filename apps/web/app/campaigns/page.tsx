@@ -1,0 +1,10 @@
+'use client';
+
+import { useQuery } from '@tanstack/react-query';
+import { AppShell } from '@/components/app-shell';
+import { Empty, Status } from '@/components/ui';
+import { api } from '@/lib/api';
+import { useSession } from '@/lib/store';
+
+interface Campaign { id: string; name: string; platform: string; status: string; scheduledAt?: string; promotional: boolean; statistics: Record<string, number>; _count: { audience: number; messages: number }; account?: { displayName: string } }
+export default function CampaignsPage() { const workspaceId = useSession((state) => state.workspaceId); const query = useQuery({ queryKey: ['campaigns', workspaceId], queryFn: () => api<Campaign[]>(`/workspaces/${workspaceId}/campaigns`), enabled: Boolean(workspaceId) }); return <AppShell title="Chiến dịch tin nhắn" subtitle="Approval workflow, queue progress, consent gate và idempotent delivery." action={<button className="button-primary">Tạo chiến dịch</button>}>{query.data?.length ? <div className="panel overflow-x-auto"><table className="data-table"><thead><tr><th>Chiến dịch</th><th>Platform</th><th>Audience</th><th>Trạng thái</th><th>Loại</th><th>Kết quả</th></tr></thead><tbody>{query.data.map((campaign) => <tr key={campaign.id}><td><div className="font-medium">{campaign.name}</div><div className="mt-1 text-xs text-[var(--muted)]">{campaign.account?.displayName ?? 'No account'}</div></td><td>{campaign.platform}</td><td>{campaign._count.audience.toLocaleString('vi-VN')}</td><td><Status tone={campaign.status === 'RUNNING' ? 'success' : campaign.status === 'FAILED' ? 'danger' : 'warning'}>{campaign.status}</Status></td><td className="text-sm text-[var(--muted)]">{campaign.promotional ? 'Promotional' : 'Transactional'}</td><td className="text-xs text-[var(--muted)]">{JSON.stringify(campaign.statistics)}</td></tr>)}</tbody></table></div> : <Empty title="Chưa có chiến dịch" description="Campaign quảng cáo chỉ nhận contact OPTED_IN và luôn cần phê duyệt trước khi schedule/launch." />}</AppShell>; }

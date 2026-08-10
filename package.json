@@ -1,0 +1,53 @@
+{
+  "name": "omnisocial",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Consent-aware, API-compliant social operations platform",
+  "license": "UNLICENSED",
+  "packageManager": "npm@11.9.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build:packages && npm run build:apps",
+    "build:packages": "npm run build -w @omni/shared && npm run build -w @omni/auth && npm run build -w @omni/queue && npm run build -w @omni/platform-core && npm run build -w @omni/platform-zalo && npm run build -w @omni/platform-facebook && npm run build -w @omni/platform-tiktok && npm run build -w @omni/database && npm run build -w @omni/ui",
+    "build:apps": "npm run build -w @omni/api && npm run build -w @omni/worker && npm run build -w @omni/scheduler && npm run build -w @omni/web",
+    "dev": "concurrently -n api,web,worker,scheduler -c blue,magenta,yellow,cyan \"npm run dev -w @omni/api\" \"npm run dev -w @omni/web\" \"npm run dev -w @omni/worker\" \"npm run dev -w @omni/scheduler\"",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "backup": "powershell -ExecutionPolicy Bypass -File scripts/backup.ps1",
+    "restore": "powershell -ExecutionPolicy Bypass -File scripts/restore.ps1",
+    "compose:config": "docker compose config --quiet",
+    "compose:up": "docker compose up -d --build",
+    "compose:down": "docker compose down"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^24.10.0",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^16.5.0",
+    "prettier": "^3.6.2",
+    "prisma": "6.19.3",
+    "tsx": "^4.20.6",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.4",
+    "vitest": "^4.0.16"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.9.0"
+  },
+  "overrides": {
+    "sharp": "0.35.3"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "name": "@omni/api",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "nest build",
+    "dev": "nest start --watch",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.28",
+    "@nestjs/config": "^4.0.2",
+    "@nestjs/core": "^11.1.28",
+    "@nestjs/jwt": "^11.0.2",
+    "@nestjs/platform-express": "^11.1.28",
+    "@nestjs/throttler": "^6.5.0",
+    "@omni/auth": "*",
+    "@omni/database": "*",
+    "@omni/platform-core": "*",
+    "@omni/platform-facebook": "*",
+    "@omni/platform-tiktok": "*",
+    "@omni/platform-zalo": "*",
+    "@omni/queue": "*",
+    "@omni/shared": "*",
+    "argon2": "^0.44.0",
+    "bullmq": "^6.0.9",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.3",
+    "compression": "^1.8.1",
+    "helmet": "^8.1.0",
+    "ioredis": "^5.11.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.14",
+    "@types/compression": "^1.8.1",
+    "@types/express": "^5.0.6",
+    "@types/swagger-ui-express": "^4.1.8"
+  }
+}

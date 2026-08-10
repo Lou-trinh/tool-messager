@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --bg: #080b10;
+  --panel: #0e131b;
+  --panel-2: #131a24;
+  --border: #202a38;
+  --muted: #8b99aa;
+  --text: #edf3f8;
+  --brand: #2dd4bf;
+  --brand-2: #22c55e;
+  --danger: #fb7185;
+}
+
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body { margin: 0; background: radial-gradient(circle at 70% -20%, rgba(45,212,191,.1), transparent 35%), var(--bg); color: var(--text); font-family: var(--font-sans), sans-serif; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+::selection { background: rgba(45,212,191,.25); }
+
+.panel { background: linear-gradient(145deg, rgba(19,26,36,.95), rgba(12,17,24,.95)); border: 1px solid var(--border); border-radius: 16px; }
+.eyebrow { color: var(--brand); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.muted { color: var(--muted); }
+.button-primary { border: 0; border-radius: 10px; background: linear-gradient(135deg, var(--brand), var(--brand-2)); color: #03110f; font-weight: 750; padding: 10px 15px; box-shadow: 0 8px 26px rgba(45,212,191,.14); }
+.button-ghost { border: 1px solid var(--border); border-radius: 10px; background: rgba(255,255,255,.025); color: var(--text); padding: 9px 13px; }
+.input { width: 100%; border: 1px solid var(--border); border-radius: 10px; background: #0a0f16; color: var(--text); outline: none; padding: 11px 12px; }
+.input:focus { border-color: rgba(45,212,191,.7); box-shadow: 0 0 0 3px rgba(45,212,191,.1); }
+.data-table { width: 100%; border-collapse: collapse; }
+.data-table th { color: var(--muted); font-size: 11px; letter-spacing: .08em; text-align: left; text-transform: uppercase; }
+.data-table th, .data-table td { border-bottom: 1px solid var(--border); padding: 13px 14px; }
+.data-table tr:last-child td { border-bottom: 0; }
+.status { align-items: center; border: 1px solid currentColor; border-radius: 999px; display: inline-flex; font-size: 11px; font-weight: 700; gap: 6px; padding: 4px 8px; }
+.status::before { background: currentColor; border-radius: 50%; content: ''; height: 6px; width: 6px; }
