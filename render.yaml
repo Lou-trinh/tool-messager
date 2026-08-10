@@ -12,6 +12,10 @@ services:
         value: production
       - key: APP_URL
         value: https://lou-trinh.github.io
+      - key: FRONTEND_URL
+        value: https://lou-trinh.github.io/tool-messager
+      - key: ZALO_REDIRECT_URI
+        value: https://tool-messager-api.onrender.com/api/v1/platforms/zalo/oauth/callback
       - key: DATABASE_URL
         fromDatabase:
           name: tool-messager-db

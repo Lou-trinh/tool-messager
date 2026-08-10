@@ -133,6 +133,28 @@ docker compose config --quiet
 - SMTP không cấu hình sẽ trả `NOT_CONFIGURED`; ở non-production token dev được trả để kiểm thử flow.
 - OAuth HTTP client thực tế phụ thuộc credential, app review và scope được nền tảng cấp. Các adapter hiện đã có interface, capability detection, configuration gate và lỗi rõ ràng để tích hợp mà không sửa core service.
 
+## Kết nối Zalo Official Account
+
+Luồng Zalo OA dùng OAuth v4 + PKCE và callback server-side. Authorization state/code verifier chỉ dùng một lần và được lưu mã hóa; access token cùng refresh token được mã hóa AES-256-GCM. Hệ thống tự làm mới token khi tài khoản sắp hết hạn và lưu refresh token mới sau mỗi lần rotation.
+
+1. Tạo và kích hoạt Zalo App tại `https://developers.zalo.me`.
+2. Trong phần Zalo OA OpenAPI, khai báo callback URL chính xác:
+   `https://tool-messager-api.onrender.com/api/v1/platforms/zalo/oauth/callback`
+3. Yêu cầu tối thiểu quyền quản lý thông tin OA. Các quyền nhắn tin, người dùng, bài viết phải được chọn/xét duyệt theo chức năng cần dùng.
+4. Trên Render Web Service, thêm secret `ZALO_CLIENT_ID` (App ID) và `ZALO_CLIENT_SECRET` (Secret key), sau đó redeploy.
+5. Đăng nhập OmniSocial, vào **Tài khoản** và chọn **Kết nối Zalo OA**.
+
+Các biến liên quan:
+
+```text
+FRONTEND_URL=https://lou-trinh.github.io/tool-messager
+ZALO_CLIENT_ID=<zalo-app-id>
+ZALO_CLIENT_SECRET=<zalo-secret-key>
+ZALO_REDIRECT_URI=https://tool-messager-api.onrender.com/api/v1/platforms/zalo/oauth/callback
+```
+
+`ZALO_CLIENT_SECRET`, access token, refresh token và code verifier không được trả về frontend hoặc ghi vào log.
+
 ## License
 
 Proprietary / `UNLICENSED`.

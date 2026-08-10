@@ -1,9 +1,10 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
-import { createCipheriv, createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { Prisma } from '@omni/database';
 import { queues } from '@omni/queue';
 import { PrismaService } from '../common/prisma.service';
 import { QueueService } from '../common/queue.service';
+import { SecretEncryptionService } from '../common/secret-encryption.service';
 import { PlatformRegistryService } from '../platforms/platform-registry.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import type {
@@ -26,6 +27,7 @@ export class OperationsService {
     private readonly workspaces: WorkspacesService,
     private readonly platforms: PlatformRegistryService,
     private readonly queue: QueueService,
+    private readonly secrets: SecretEncryptionService,
   ) {}
 
   private json(value: unknown): Prisma.InputJsonValue {
@@ -175,16 +177,6 @@ export class OperationsService {
     return result;
   }
 
-  private encryptSecret(value: string): string {
-    const encryptionKey = process.env.ENCRYPTION_KEY;
-    if (!encryptionKey) throw new ServiceUnavailableException('ENCRYPTION_KEY is not configured.');
-    const key = createHash('sha256').update(encryptionKey).digest();
-    const iv = randomBytes(12);
-    const cipher = createCipheriv('aes-256-gcm', key, iv);
-    const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
-    return `${iv.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${encrypted.toString('base64url')}`;
-  }
-
   async proxies(userId: string, workspaceId: string): Promise<unknown[]> {
     await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER', 'VIEWER']);
     return this.prisma.proxy.findMany({ where: { workspaceId, deletedAt: null }, select: { id: true, name: true, type: true, host: true, port: true, status: true, lastCheckAt: true, latencyMs: true, createdAt: true, _count: { select: { accounts: true } } }, orderBy: { createdAt: 'desc' } });
@@ -192,7 +184,7 @@ export class OperationsService {
 
   async createProxy(userId: string, workspaceId: string, input: CreateProxyDto): Promise<unknown> {
     await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN']);
-    const proxy = await this.prisma.proxy.create({ data: { workspaceId, name: input.name, type: input.type, host: input.host, port: input.port, ...(input.username ? { encryptedUsername: this.encryptSecret(input.username) } : {}), ...(input.password ? { encryptedPassword: this.encryptSecret(input.password) } : {}) }, select: { id: true, name: true, type: true, host: true, port: true, status: true, createdAt: true } });
+    const proxy = await this.prisma.proxy.create({ data: { workspaceId, name: input.name, type: input.type, host: input.host, port: input.port, ...(input.username ? { encryptedUsername: this.secrets.encrypt(input.username) } : {}), ...(input.password ? { encryptedPassword: this.secrets.encrypt(input.password) } : {}) }, select: { id: true, name: true, type: true, host: true, port: true, status: true, createdAt: true } });
     await this.audit(workspaceId, userId, 'PROXY_CREATED', 'Proxy', proxy.id, { type: input.type, host: input.host, port: input.port });
     return proxy;
   }

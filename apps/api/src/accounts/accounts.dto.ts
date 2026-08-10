@@ -17,3 +17,25 @@ export class CreateAccountDto {
   @IsString()
   username?: string;
 }
+
+export class ZaloOAuthCallbackDto {
+  @IsOptional()
+  @IsString()
+  code?: string;
+
+  @IsOptional()
+  @IsString()
+  oa_id?: string;
+
+  @IsOptional()
+  @IsString()
+  state?: string;
+
+  @IsOptional()
+  @IsString()
+  error?: string;
+
+  @IsOptional()
+  @IsString()
+  error_description?: string;
+}

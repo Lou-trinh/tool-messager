@@ -7,8 +7,9 @@ import type { Platform } from '@omni/shared';
 
 @Injectable()
 export class PlatformRegistryService {
+  private readonly zaloAdapter = new ZaloAdapter();
   private readonly adapters = new Map<Platform, PlatformAdapter>([
-    ['ZALO', new ZaloAdapter()],
+    ['ZALO', this.zaloAdapter],
     ['FACEBOOK', new FacebookAdapter()],
     ['TIKTOK', new TikTokAdapter()],
   ]);
@@ -17,6 +18,10 @@ export class PlatformRegistryService {
     const adapter = this.adapters.get(platform);
     if (!adapter) throw new Error(`No adapter registered for ${platform}.`);
     return adapter;
+  }
+
+  zalo(): ZaloAdapter {
+    return this.zaloAdapter;
   }
 
   matrix(): unknown[] {

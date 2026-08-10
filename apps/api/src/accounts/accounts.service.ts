@@ -3,6 +3,7 @@ import { PrismaService } from '../common/prisma.service';
 import { PlatformRegistryService } from '../platforms/platform-registry.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import type { CreateAccountDto } from './accounts.dto';
+import { ZaloOAuthService } from './zalo-oauth.service';
 
 @Injectable()
 export class AccountsService {
@@ -10,10 +11,12 @@ export class AccountsService {
     private readonly prisma: PrismaService,
     private readonly workspaces: WorkspacesService,
     private readonly platforms: PlatformRegistryService,
+    private readonly zaloOAuth: ZaloOAuthService,
   ) {}
 
   async list(userId: string, workspaceId: string): Promise<unknown[]> {
     await this.workspaces.assertMembership(userId, workspaceId);
+    await this.zaloOAuth.refreshExpiringForWorkspace(userId, workspaceId);
     const accounts = await this.prisma.socialAccount.findMany({ where: { workspaceId, deletedAt: null }, select: { id: true, platform: true, platformAccountId: true, username: true, displayName: true, avatarUrl: true, status: true, permissions: true, tokenExpiresAt: true, lastSyncAt: true, lastErrorCode: true, createdAt: true } });
     return accounts.map((account) => ({ ...account, capabilities: this.platforms.get(account.platform).capabilities() }));
   }

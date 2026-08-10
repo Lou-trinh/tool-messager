@@ -13,13 +13,13 @@ class TestAdapter extends OfficialApiAdapter {
 
 describe('official adapter fallback', () => {
   it('returns NOT_CONFIGURED without platform credentials', async () => {
-    const result = await new TestAdapter(false).sendMessage();
+    const result = await new TestAdapter(false).sendMessage({ workspaceId: 'workspace', accountId: 'account' }, 'recipient', 'hello');
     expect(result.status).toBe('NOT_CONFIGURED');
     expect(result.errorCode).toBe('PLATFORM_NOT_CONFIGURED');
   });
 
   it('returns NOT_SUPPORTED instead of simulating success', async () => {
-    const result = await new TestAdapter(true).createPost();
+    const result = await new TestAdapter(true).createPost({ workspaceId: 'workspace', accountId: 'account' }, {});
     expect(result.status).toBe('NOT_SUPPORTED');
     expect(result.data).toBeUndefined();
   });

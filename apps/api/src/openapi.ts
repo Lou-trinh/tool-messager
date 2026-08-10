@@ -78,6 +78,9 @@ export const openApiDocument = {
       get: { tags: ['accounts'], summary: 'List social accounts', security: bearer, parameters: [workspaceParameter], responses: { 200: ok, ...errorResponses } },
       post: { tags: ['accounts'], summary: 'Create a disconnected official-API account record', security: bearer, parameters: [workspaceParameter], responses: { 201: ok, ...errorResponses } },
     },
+    '/workspaces/{workspaceId}/accounts/zalo/oauth/start': { post: { tags: ['accounts'], summary: 'Start Zalo OA OAuth v4 with one-time PKCE state', security: bearer, parameters: [workspaceParameter], responses: { 201: ok, ...errorResponses } } },
+    '/platforms/zalo/oauth/callback': { get: { tags: ['accounts'], summary: 'Complete Zalo OA OAuth callback and redirect to the frontend', responses: { 303: { description: 'Redirect to the accounts page with the connection result.' }, ...errorResponses } } },
+    '/workspaces/{workspaceId}/accounts/{accountId}/zalo/refresh': { post: { tags: ['accounts'], summary: 'Rotate Zalo OA access and refresh tokens', security: bearer, parameters: [workspaceParameter, { name: 'accountId', in: 'path', required: true, schema: { type: 'string' } }], responses: { 201: ok, ...errorResponses } } },
     '/workspaces/{workspaceId}/accounts/{accountId}/sync': { post: { tags: ['accounts'], summary: 'Request account sync', security: bearer, parameters: [workspaceParameter, { name: 'accountId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 201: accepted, ...errorResponses } } },
     '/workspaces/{workspaceId}/contacts': {
       get: { tags: ['contacts'], summary: 'Search and paginate contacts', security: bearer, parameters: [workspaceParameter], responses: { 200: ok, ...errorResponses } },

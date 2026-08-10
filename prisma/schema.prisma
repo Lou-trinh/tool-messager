@@ -162,6 +162,7 @@ model User {
   assignedTasks       Task[]
   notifications       Notification[]
   invitationsSent     WorkspaceInvitation[] @relation("InvitationSender")
+  platformOAuthStates PlatformOAuthState[]
 }
 
 model Workspace {
@@ -194,6 +195,7 @@ model Workspace {
   notifications   Notification[]
   webhookEvents   WebhookEvent[]
   tasks           Task[]
+  platformOAuthStates PlatformOAuthState[]
 
   @@index([deletedAt])
 }
@@ -335,6 +337,24 @@ model PlatformCredential {
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
   account               SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+}
+
+model PlatformOAuthState {
+  id                    String    @id @default(cuid())
+  platform              Platform
+  stateHash             String    @unique
+  encryptedCodeVerifier String
+  redirectUri           String
+  workspaceId           String
+  userId                String
+  expiresAt             DateTime
+  usedAt                DateTime?
+  createdAt             DateTime  @default(now())
+  workspace             Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt, usedAt])
+  @@index([workspaceId, platform])
 }
 
 model Contact {

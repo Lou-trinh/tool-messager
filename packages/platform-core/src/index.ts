@@ -79,23 +79,23 @@ export abstract class OfficialApiAdapter implements PlatformAdapter {
     return { status: 'FAILED', errorCode: 'PLATFORM_UNAVAILABLE', message: 'Official API client is unavailable.' };
   }
 
-  async authenticate(): Promise<PlatformOperationResult<unknown>> { return this.unavailable('AUTHENTICATE'); }
-  async disconnect(): Promise<PlatformOperationResult<void>> { return this.unavailable('AUTHENTICATE'); }
-  async getAccountInfo(): Promise<PlatformOperationResult<unknown>> { return this.unavailable('AUTHENTICATE'); }
-  async getContacts(): Promise<PlatformOperationResult<unknown[]>> { return this.unavailable('CONTACTS'); }
-  async getFriends(): Promise<PlatformOperationResult<unknown[]>> { return this.unavailable('FRIENDS'); }
-  async getGroups(): Promise<PlatformOperationResult<unknown[]>> { return this.unavailable('GROUPS'); }
-  async getGroupMembers(): Promise<PlatformOperationResult<unknown[]>> { return this.unavailable('GROUP_MEMBERS'); }
-  async sendMessage(): Promise<PlatformOperationResult<{ platformMessageId: string }>> { return this.unavailable('MESSAGING'); }
-  async sendMedia(): Promise<PlatformOperationResult<{ platformMessageId: string }>> { return this.unavailable('MEDIA'); }
-  async createPost(): Promise<PlatformOperationResult<unknown>> { return this.unavailable('POST_CREATE'); }
-  async updatePost(): Promise<PlatformOperationResult<unknown>> { return this.unavailable('POST_UPDATE'); }
-  async deletePost(): Promise<PlatformOperationResult<void>> { return this.unavailable('POST_DELETE'); }
-  async getMessages(): Promise<PlatformOperationResult<unknown[]>> { return this.unavailable('MESSAGE_HISTORY'); }
-  async getMessageHistory(): Promise<PlatformOperationResult<unknown[]>> { return this.unavailable('MESSAGE_HISTORY'); }
-  async createGroup(): Promise<PlatformOperationResult<unknown>> { return this.unavailable('GROUP_CREATE'); }
-  async addMember(): Promise<PlatformOperationResult<void>> { return this.unavailable('GROUP_MEMBER_MANAGE'); }
-  async removeMember(): Promise<PlatformOperationResult<void>> { return this.unavailable('GROUP_MEMBER_MANAGE'); }
-  async getAnalytics(): Promise<PlatformOperationResult<unknown>> { return this.unavailable('ANALYTICS'); }
-  async refreshData(): Promise<PlatformOperationResult<unknown>> { return this.unavailable('ANALYTICS'); }
+  async authenticate(_input: Readonly<Record<string, string>>): Promise<PlatformOperationResult<unknown>> { return this.unavailable('AUTHENTICATE'); }
+  async disconnect(_context: AdapterContext): Promise<PlatformOperationResult<void>> { return this.unavailable('AUTHENTICATE'); }
+  async getAccountInfo(_context: AdapterContext): Promise<PlatformOperationResult<unknown>> { return this.unavailable('AUTHENTICATE'); }
+  async getContacts(_context: AdapterContext): Promise<PlatformOperationResult<unknown[]>> { return this.unavailable('CONTACTS'); }
+  async getFriends(_context: AdapterContext): Promise<PlatformOperationResult<unknown[]>> { return this.unavailable('FRIENDS'); }
+  async getGroups(_context: AdapterContext): Promise<PlatformOperationResult<unknown[]>> { return this.unavailable('GROUPS'); }
+  async getGroupMembers(_context: AdapterContext, _groupId: string): Promise<PlatformOperationResult<unknown[]>> { return this.unavailable('GROUP_MEMBERS'); }
+  async sendMessage(_context: AdapterContext, _recipientId: string, _content: string): Promise<PlatformOperationResult<{ platformMessageId: string }>> { return this.unavailable('MESSAGING'); }
+  async sendMedia(_context: AdapterContext, _recipientId: string, _mediaUrl: string): Promise<PlatformOperationResult<{ platformMessageId: string }>> { return this.unavailable('MEDIA'); }
+  async createPost(_context: AdapterContext, _payload: Readonly<Record<string, unknown>>): Promise<PlatformOperationResult<unknown>> { return this.unavailable('POST_CREATE'); }
+  async updatePost(_context: AdapterContext, _postId: string, _payload: Readonly<Record<string, unknown>>): Promise<PlatformOperationResult<unknown>> { return this.unavailable('POST_UPDATE'); }
+  async deletePost(_context: AdapterContext, _postId: string): Promise<PlatformOperationResult<void>> { return this.unavailable('POST_DELETE'); }
+  async getMessages(_context: AdapterContext): Promise<PlatformOperationResult<unknown[]>> { return this.unavailable('MESSAGE_HISTORY'); }
+  async getMessageHistory(_context: AdapterContext, _conversationId: string): Promise<PlatformOperationResult<unknown[]>> { return this.unavailable('MESSAGE_HISTORY'); }
+  async createGroup(_context: AdapterContext, _name: string): Promise<PlatformOperationResult<unknown>> { return this.unavailable('GROUP_CREATE'); }
+  async addMember(_context: AdapterContext, _groupId: string, _memberId: string): Promise<PlatformOperationResult<void>> { return this.unavailable('GROUP_MEMBER_MANAGE'); }
+  async removeMember(_context: AdapterContext, _groupId: string, _memberId: string): Promise<PlatformOperationResult<void>> { return this.unavailable('GROUP_MEMBER_MANAGE'); }
+  async getAnalytics(_context: AdapterContext): Promise<PlatformOperationResult<unknown>> { return this.unavailable('ANALYTICS'); }
+  async refreshData(_context: AdapterContext): Promise<PlatformOperationResult<unknown>> { return this.unavailable('ANALYTICS'); }
 }
