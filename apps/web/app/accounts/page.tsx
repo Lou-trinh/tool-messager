@@ -85,7 +85,7 @@ export default function AccountsPage() {
       subtitle="Kết nối qua OAuth chính thức, theo dõi token expiry và trạng thái đồng bộ."
       action={(
         <button className="button-primary disabled:cursor-not-allowed disabled:opacity-60" disabled={busy || !workspaceId} onClick={() => connect.mutate()}>
-          {connect.isPending ? 'Đang mở Zalo…' : 'Kết nối Zalo OA'}
+          {!workspaceId ? 'Đang tải workspace…' : connect.isPending ? 'Đang mở Zalo…' : 'Kết nối Zalo OA'}
         </button>
       )}
     >

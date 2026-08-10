@@ -3,8 +3,14 @@
 import { Activity, CalendarDays, ChevronDown, ContactRound, FileStack, Inbox, LayoutDashboard, Megaphone, Network, Search, Settings, ShieldCheck, UsersRound, Workflow, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/lib/api';
 import { useSession } from '@/lib/store';
+
+interface WorkspaceItem {
+  workspace: { id: string };
+}
 
 const nav = [
   { label: 'Tổng quan', href: '/', icon: LayoutDashboard },
@@ -31,7 +37,32 @@ const nav = [
 export function AppShell({ children, title, subtitle, action }: { children: ReactNode; title: string; subtitle: string; action?: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const accessToken = useSession((state) => state.accessToken);
+  const workspaceId = useSession((state) => state.workspaceId);
+  const setWorkspace = useSession((state) => state.setWorkspace);
   const clear = useSession((state) => state.clear);
+  const workspaces = useQuery({
+    queryKey: ['workspaces'],
+    queryFn: () => api<WorkspaceItem[]>('/workspaces'),
+    enabled: Boolean(accessToken) && !workspaceId,
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (!accessToken) {
+      router.replace('/login');
+      return;
+    }
+    const firstWorkspaceId = workspaces.data?.[0]?.workspace.id;
+    if (!workspaceId && firstWorkspaceId) setWorkspace(firstWorkspaceId);
+  }, [accessToken, router, setWorkspace, workspaceId, workspaces.data]);
+
+  useEffect(() => {
+    if (!workspaces.isError) return;
+    clear();
+    router.replace('/login');
+  }, [clear, router, workspaces.isError]);
+
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[244px_1fr]">
       <aside className="border-r border-[var(--border)] bg-[#090d13]/95 px-4 py-5 lg:sticky lg:top-0 lg:h-screen">
