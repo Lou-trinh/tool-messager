@@ -1,13 +1,14 @@
 import 'reflect-metadata';
 import compression from 'compression';
 import helmet from 'helmet';
-import { ValidationPipe } from '@nestjs/common';
+import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import swaggerUi from 'swagger-ui-express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
 import { JsonLogger } from './common/json-logger';
 import { openApiDocument } from './openapi';
+import { ZALO_SITE_VERIFICATION_PATH } from './site-verification.controller';
 
 function validateEnvironment(): void {
   const required = ['DATABASE_URL', 'REDIS_URL', 'JWT_SECRET', 'JWT_REFRESH_SECRET', 'ENCRYPTION_KEY'] as const;
@@ -23,7 +24,9 @@ function validateEnvironment(): void {
 async function bootstrap(): Promise<void> {
   validateEnvironment();
   const app = await NestFactory.create(AppModule, { logger: new JsonLogger() });
-  app.setGlobalPrefix('api/v1');
+  app.setGlobalPrefix('api/v1', {
+    exclude: [{ path: ZALO_SITE_VERIFICATION_PATH, method: RequestMethod.GET }],
+  });
   app.use(helmet({
     contentSecurityPolicy: {
       directives: {

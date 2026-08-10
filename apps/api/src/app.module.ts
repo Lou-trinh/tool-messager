@@ -15,6 +15,7 @@ import { MessagesModule } from './messages/messages.module';
 import { OperationsModule } from './operations/operations.module';
 import { PlatformsModule } from './platforms/platforms.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
+import { SiteVerificationController } from './site-verification.controller';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
     AuditModule,
     HealthModule,
   ],
+  controllers: [SiteVerificationController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}
