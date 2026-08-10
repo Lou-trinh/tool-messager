@@ -130,7 +130,10 @@ const healthServer = createServer((_request, response) => {
   response.writeHead(healthy ? 200 : 503, { 'content-type': 'application/json' });
   response.end(JSON.stringify({ status: healthy ? 'ok' : 'degraded', service: 'omnisocial-worker' }));
 });
-healthServer.listen(Number(process.env.WORKER_HEALTH_PORT ?? 4101), '0.0.0.0');
+healthServer.listen(
+  Number(process.env.WORKER_HEALTH_PORT ?? 4101),
+  process.env.AUX_HEALTH_HOST ?? '0.0.0.0',
+);
 
 async function shutdown(): Promise<void> {
   await Promise.all([messageWorker.close(), automationWorker.close(), postWorker.close(), messageQueue.close()]);

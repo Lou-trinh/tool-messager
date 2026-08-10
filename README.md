@@ -103,6 +103,18 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 Production overlay bắt buộc ba application secret và API sẽ fail-fast nếu nhận placeholder. Migration chạy tự động trước khi API lắng nghe. Backup trước mỗi migration; xem `docs/OPERATIONS.md`.
 
+### Render demo miễn phí
+
+[`render.yaml`](render.yaml) tạo một web service chạy chung API, worker và scheduler, kèm Render Postgres và Render Key Value. Blueprint tự sinh các application secret, chạy migration và nạp dữ liệu demo idempotent trước khi khởi động.
+
+Sau khi Render cấp URL HTTPS cho API:
+
+1. Tạo repository variable `NEXT_PUBLIC_API_URL` với giá trị `https://<render-host>/api/v1`.
+2. Chạy lại workflow `Deploy frontend to GitHub Pages`.
+3. Đăng nhập bằng `owner@demo.local` / `DemoPass!2026`.
+
+Đây chỉ là môi trường demo: web service miễn phí có thể sleep khi không hoạt động, Key Value miễn phí không lưu dữ liệu qua restart và PostgreSQL miễn phí của Render hết hạn sau 30 ngày. Khi chuyển sang production thật, đặt `SEED_DEMO_DATA=false`, đổi mật khẩu demo và nâng datastore lên gói có persistence/backup.
+
 ## Quality gates
 
 ```powershell
