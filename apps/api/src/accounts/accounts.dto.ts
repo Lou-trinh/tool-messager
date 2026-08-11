@@ -33,6 +33,10 @@ export class ZaloOAuthCallbackDto {
 
   @IsOptional()
   @IsString()
+  oauth_state?: string;
+
+  @IsOptional()
+  @IsString()
   error?: string;
 
   @IsOptional()

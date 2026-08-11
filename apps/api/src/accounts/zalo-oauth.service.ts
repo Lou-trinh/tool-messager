@@ -44,6 +44,8 @@ export class ZaloOAuthService {
     const codeVerifier = randomBytes(32).toString('base64url');
     const codeChallenge = createHash('sha256').update(codeVerifier, 'ascii').digest('base64url');
     const expiresAt = new Date(Date.now() + stateLifetimeMs);
+    const correlatedCallbackUrl = new URL(callbackUrl);
+    correlatedCallbackUrl.searchParams.set('oauth_state', state);
 
     await this.prisma.$transaction([
       this.prisma.platformOAuthState.deleteMany({
@@ -68,7 +70,11 @@ export class ZaloOAuthService {
     ]);
 
     return {
-      authorizationUrl: adapter.createAuthorizationUrl({ state, codeChallenge }),
+      authorizationUrl: adapter.createAuthorizationUrl({
+        state,
+        codeChallenge,
+        redirectUri: correlatedCallbackUrl.toString(),
+      }),
       callbackUrl,
       expiresAt: expiresAt.toISOString(),
     };
@@ -76,10 +82,11 @@ export class ZaloOAuthService {
 
   async complete(input: ZaloOAuthCallbackDto): Promise<string> {
     if (input.error) throw new BadRequestException(input.error_description ?? input.error);
-    if (!input.code || !input.state) throw new BadRequestException('Zalo callback thiếu authorization code hoặc state.');
+    const callbackState = input.state ?? input.oauth_state;
+    if (!input.code || !callbackState) throw new BadRequestException('Zalo callback thiếu authorization code hoặc mã phiên OAuth.');
 
     const oauthState = await this.prisma.platformOAuthState.findFirst({
-      where: { platform: 'ZALO', stateHash: this.hash(input.state), usedAt: null },
+      where: { platform: 'ZALO', stateHash: this.hash(callbackState), usedAt: null },
     });
     if (!oauthState || oauthState.expiresAt <= new Date()) throw new BadRequestException('Phiên kết nối Zalo đã hết hạn hoặc không hợp lệ.');
     if (oauthState.redirectUri !== this.platforms.zalo().callbackUrl()) throw new BadRequestException('Zalo callback URL không khớp cấu hình.');

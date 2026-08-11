@@ -25,6 +25,18 @@ describe('Zalo OAuth v4 adapter', () => {
     });
   });
 
+  it('supports a per-request callback URL used to correlate Zalo callbacks', () => {
+    const value = new ZaloAdapter().createAuthorizationUrl({
+      state: 'csrf-state',
+      codeChallenge: 'pkce-challenge',
+      redirectUri: 'https://api.example.com/api/v1/platforms/zalo/oauth/callback?oauth_state=callback-state',
+    });
+
+    expect(new URL(value).searchParams.get('redirect_uri')).toBe(
+      'https://api.example.com/api/v1/platforms/zalo/oauth/callback?oauth_state=callback-state',
+    );
+  });
+
   it('exchanges an authorization code without exposing the app secret in the body', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
       access_token: 'access-1', refresh_token: 'refresh-1', expires_in: '90000',

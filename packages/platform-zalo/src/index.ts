@@ -98,9 +98,9 @@ export class ZaloAdapter extends OfficialApiAdapter {
     return process.env.ZALO_REDIRECT_URI?.trim() || null;
   }
 
-  createAuthorizationUrl(input: { state: string; codeChallenge: string }): string {
+  createAuthorizationUrl(input: { state: string; codeChallenge: string; redirectUri?: string }): string {
     const appId = process.env.ZALO_CLIENT_ID?.trim();
-    const redirectUri = this.callbackUrl();
+    const redirectUri = input.redirectUri?.trim() || this.callbackUrl();
     if (!appId || !redirectUri) throw new Error('Zalo OAuth is not configured.');
     const url = new URL(authorizeEndpoint);
     url.searchParams.set('app_id', appId);
