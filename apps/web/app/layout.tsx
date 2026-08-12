@@ -8,8 +8,8 @@ const geist = Geist({ subsets: ['latin', 'latin-ext'], variable: '--font-sans' }
 const mono = Geist_Mono({ subsets: ['latin', 'latin-ext'], variable: '--font-mono' });
 
 export const metadata: Metadata = {
-  title: 'OmniSocial — Social operations',
-  description: 'Consent-aware social management and automation platform',
+  title: 'ZaloHub SaaS — Multi-tenant Zalo operations',
+  description: 'Consent-aware, multi-tenant Zalo management and automation SaaS',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

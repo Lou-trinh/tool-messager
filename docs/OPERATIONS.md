@@ -40,3 +40,9 @@ Script mặc định dùng database/user dev. Với production, dùng credential
 ## Scaling
 
 Scale worker ngang; giữ scheduler một replica hoặc dùng leader election. BullMQ job ID/idempotency bảo vệ duplicate, nhưng mọi consumer vẫn phải giữ transaction và safety recheck. Nginx có thể thay bằng managed load balancer/TLS ingress.
+
+## Zalo OA webhook
+
+Endpoint production: `POST /api/v1/platforms/zalo/webhook`. Cấu hình cùng `ZALO_CLIENT_ID` và `ZALO_OA_SECRET_KEY`; endpoint từ chối sai app ID, chữ ký sai hoặc timestamp ngoài cửa sổ chống replay. Event hợp lệ được lưu trước, deduplicate và đưa vào queue `webhook.process`; HTTP request không xử lý inbox đồng bộ.
+
+Khi rotate OA secret: cập nhật Render/secret manager, redeploy, sau đó gửi một event thử và kiểm tra `WebhookEvent`, `BackgroundJob`, queue metrics cùng inbox tenant. Không ghi raw secret hoặc token vào ticket/log.

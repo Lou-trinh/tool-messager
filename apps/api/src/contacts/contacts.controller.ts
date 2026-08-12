@@ -1,8 +1,8 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import type { AuthUser } from '../auth/auth.types';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { ContactInputDto, CreateTagDto, ImportContactsDto, UpdateConsentDto } from './contacts.dto';
+import { ContactInputDto, CreateSuppressionDto, CreateTagDto, ImportContactsDto, UpdateConsentDto } from './contacts.dto';
 import { ContactsService } from './contacts.service';
 
 @UseGuards(JwtAuthGuard)
@@ -27,4 +27,13 @@ export class ContactsController {
 
   @Post('contacts/:contactId/tags/:tagId')
   async assignTag(@CurrentUser() user: AuthUser, @Param('workspaceId') workspaceId: string, @Param('contactId') contactId: string, @Param('tagId') tagId: string): Promise<unknown> { await this.contacts.assignTag(user.id, workspaceId, contactId, tagId); return { success: true, data: { assigned: true } }; }
+
+  @Get('suppressions')
+  async suppressions(@CurrentUser() user: AuthUser, @Param('workspaceId') workspaceId: string): Promise<unknown> { return { success: true, data: await this.contacts.suppressions(user.id, workspaceId) }; }
+
+  @Post('suppressions')
+  async suppress(@CurrentUser() user: AuthUser, @Param('workspaceId') workspaceId: string, @Body() body: CreateSuppressionDto): Promise<unknown> { return { success: true, data: await this.contacts.suppress(user.id, workspaceId, body) }; }
+
+  @Delete('suppressions/:entryId')
+  async unsuppress(@CurrentUser() user: AuthUser, @Param('workspaceId') workspaceId: string, @Param('entryId') entryId: string): Promise<unknown> { await this.contacts.unsuppress(user.id, workspaceId, entryId); return { success: true, data: { removed: true } }; }
 }

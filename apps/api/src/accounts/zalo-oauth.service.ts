@@ -12,6 +12,7 @@ import { SecretEncryptionService } from '../common/secret-encryption.service';
 import { PlatformRegistryService } from '../platforms/platform-registry.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import type { ZaloOAuthCallbackDto } from './accounts.dto';
+import { SubscriptionPolicyService } from '../common/subscription-policy.service';
 
 const stateLifetimeMs = 10 * 60 * 1000;
 const refreshThresholdMs = 60 * 60 * 1000;
@@ -26,6 +27,7 @@ export class ZaloOAuthService {
     private readonly workspaces: WorkspacesService,
     private readonly platforms: PlatformRegistryService,
     private readonly secrets: SecretEncryptionService,
+    private readonly policy: SubscriptionPolicyService,
   ) {}
 
   async begin(userId: string, workspaceId: string): Promise<{
@@ -201,6 +203,8 @@ export class ZaloOAuthService {
   }
 
   private async saveConnectedAccount(workspaceId: string, userId: string, info: ZaloOaInfo, tokens: ZaloTokenSet): Promise<string> {
+    const existing = await this.prisma.socialAccount.findUnique({ where: { workspaceId_platform_platformAccountId: { workspaceId, platform: 'ZALO', platformAccountId: info.oaid } }, select: { id: true } });
+    if (!existing) await this.policy.assertAccountCapacity(workspaceId);
     return this.prisma.$transaction(async (tx) => {
       const metadata = {
         ...(info.description ? { description: info.description } : {}),

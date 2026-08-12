@@ -7,6 +7,7 @@ import { QueueService } from '../common/queue.service';
 import { SecretEncryptionService } from '../common/secret-encryption.service';
 import { PlatformRegistryService } from '../platforms/platform-registry.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
+import { SubscriptionPolicyService } from '../common/subscription-policy.service';
 import type {
   CreateAutomationDto,
   CreatePostDto,
@@ -28,6 +29,7 @@ export class OperationsService {
     private readonly platforms: PlatformRegistryService,
     private readonly queue: QueueService,
     private readonly secrets: SecretEncryptionService,
+    private readonly policy: SubscriptionPolicyService,
   ) {}
 
   private json(value: unknown): Prisma.InputJsonValue {
@@ -76,6 +78,8 @@ export class OperationsService {
 
   async createAutomation(userId: string, workspaceId: string, input: CreateAutomationDto): Promise<unknown> {
     await this.workspaces.assertMembership(userId, workspaceId, managementRoles);
+    const entitlements = await this.policy.entitlements(workspaceId);
+    if (!entitlements.automationEnabled) throw new ForbiddenException('AUTOMATION_NOT_INCLUDED: Automation is not enabled for this plan.');
     const automation = await this.prisma.automation.create({
       data: {
         workspaceId,
@@ -139,6 +143,7 @@ export class OperationsService {
 
   async publishPost(userId: string, workspaceId: string, postId: string): Promise<unknown> {
     await this.workspaces.assertMembership(userId, workspaceId, managementRoles);
+    await this.policy.assertOutboundAllowed(workspaceId);
     const post = await this.prisma.post.findFirst({ where: { id: postId, workspaceId, deletedAt: null }, include: { account: true } });
     if (!post) throw new NotFoundException('Post not found.');
     const adapter = this.platforms.get(post.platform);

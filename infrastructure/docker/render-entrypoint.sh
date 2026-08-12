@@ -3,7 +3,11 @@ set -eu
 
 npx prisma migrate deploy
 
-if [ "${SEED_DEMO_DATA:-true}" = "true" ]; then
+if [ -n "${BOOTSTRAP_SUPER_ADMIN_EMAIL:-}" ] || [ -n "${BOOTSTRAP_SUPER_ADMIN_PASSWORD:-}" ]; then
+  npx tsx prisma/bootstrap-super-admin.ts
+fi
+
+if [ "${SEED_DEMO_DATA:-false}" = "true" ]; then
   npx tsx prisma/seed.ts
 fi
 

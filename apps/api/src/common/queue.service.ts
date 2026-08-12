@@ -25,6 +25,23 @@ export class QueueService implements OnModuleDestroy {
     return this.queue(queueName).getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed');
   }
 
+  async overview(queueNames: string[]): Promise<Record<string, Record<string, number | boolean>>> {
+    const overview: Record<string, Record<string, number | boolean>> = {};
+    await Promise.all(queueNames.map(async (name) => {
+      const instance = this.queue(name);
+      overview[name] = { ...(await this.counts(name)), paused: await instance.isPaused() };
+    }));
+    return overview;
+  }
+
+  async pauseMany(queueNames: string[]): Promise<void> {
+    await Promise.all(queueNames.map((name) => this.queue(name).pause()));
+  }
+
+  async resumeMany(queueNames: string[]): Promise<void> {
+    await Promise.all(queueNames.map((name) => this.queue(name).resume()));
+  }
+
   async onModuleDestroy(): Promise<void> {
     await Promise.all([...this.instances.values()].map((queue) => queue.close()));
   }

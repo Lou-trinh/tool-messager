@@ -8,6 +8,7 @@ import {
 const authorizeEndpoint = 'https://oauth.zaloapp.com/v4/oa/permission';
 const tokenEndpoint = 'https://oauth.zaloapp.com/v4/oa/access_token';
 const oaInfoEndpoint = 'https://openapi.zalo.me/v2.0/oa/getoa';
+const advisoryMessageEndpoint = 'https://openapi.zalo.me/v3.0/oa/message/cs';
 
 export interface ZaloTokenSet {
   accessToken: string;
@@ -46,6 +47,12 @@ interface ZaloEnvelope<T> {
   data?: T;
   error?: number;
   message?: string;
+}
+
+interface ZaloMessageResponse {
+  message_id?: string | number;
+  user_id?: string | number;
+  quota?: string | number;
 }
 
 interface ZaloRawOaInfo {
@@ -166,6 +173,43 @@ export class ZaloAdapter extends OfficialApiAdapter {
       };
     } catch (error) {
       return this.networkFailure(error, 'ZALO_OA_REQUEST_FAILED');
+    }
+  }
+
+  override async sendMessage(
+    context: AdapterContext,
+    recipientId: string,
+    content: string,
+  ): Promise<PlatformOperationResult<{ platformMessageId: string }>> {
+    if (!this.configured()) return this.unavailable('MESSAGING');
+    if (!context.accessToken) return { status: 'FAILED', errorCode: 'ZALO_ACCESS_TOKEN_MISSING', message: 'Zalo access token is missing.' };
+    const text = content.trim();
+    if (!recipientId.trim() || !text || text.length > 2_000) {
+      return { status: 'FAILED', errorCode: 'ZALO_MESSAGE_INPUT_INVALID', message: 'Recipient and message text (maximum 2,000 characters) are required.' };
+    }
+    try {
+      const response = await fetch(advisoryMessageEndpoint, {
+        method: 'POST',
+        headers: {
+          access_token: context.accessToken,
+          accept: 'application/json',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ recipient: { user_id: recipientId }, message: { text } }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      const payload = await this.json<ZaloEnvelope<ZaloMessageResponse>>(response);
+      const platformMessageId = payload.data?.message_id;
+      if (!response.ok || payload.error !== 0 || !platformMessageId) {
+        return {
+          status: 'FAILED',
+          errorCode: `ZALO_API_${String(payload.error ?? response.status)}`,
+          message: payload.message ?? 'Zalo rejected the advisory message.',
+        };
+      }
+      return { status: 'SUCCESS', data: { platformMessageId: String(platformMessageId) } };
+    } catch (error) {
+      return this.networkFailure(error, 'ZALO_MESSAGE_REQUEST_FAILED');
     }
   }
 

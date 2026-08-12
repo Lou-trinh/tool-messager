@@ -67,3 +67,25 @@ export class CreateTagDto {
   @IsString()
   color?: string;
 }
+
+export class CreateSuppressionDto {
+  @IsOptional()
+  @IsIn(platformSchema.options)
+  platform?: Platform;
+
+  @IsOptional()
+  @IsString()
+  platformUserId?: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsString()
+  @Length(2, 240)
+  reason!: string;
+
+  @IsString()
+  @Length(2, 120)
+  source!: string;
+}

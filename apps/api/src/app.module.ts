@@ -16,6 +16,7 @@ import { OperationsModule } from './operations/operations.module';
 import { PlatformsModule } from './platforms/platforms.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 import { SiteVerificationController } from './site-verification.controller';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { SiteVerificationController } from './site-verification.controller';
     PlatformsModule,
     AuditModule,
     HealthModule,
+    AdminModule,
   ],
   controllers: [SiteVerificationController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

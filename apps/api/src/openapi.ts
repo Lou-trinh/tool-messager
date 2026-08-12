@@ -18,12 +18,12 @@ const workspaceParameter = {
 export const openApiDocument = {
   openapi: '3.1.0',
   info: {
-    title: 'OmniSocial API',
-    version: '0.1.0',
-    description: 'Consent-aware social operations API. Platform actions use official APIs only.',
+    title: 'ZaloHub SaaS API',
+    version: '1.0.0',
+    description: 'Multi-tenant, consent-aware Zalo operations API. Platform actions use official APIs only.',
   },
   servers: [{ url: '/api/v1' }],
-  tags: ['auth', 'workspaces', 'accounts', 'contacts', 'messages', 'campaigns', 'platforms', 'audit', 'health'].map((name) => ({ name })),
+  tags: ['auth', 'admin', 'workspaces', 'subscriptions', 'accounts', 'contacts', 'messages', 'campaigns', 'platforms', 'audit', 'health'].map((name) => ({ name })),
   components: {
     securitySchemes: {
       bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
@@ -56,6 +56,13 @@ export const openApiDocument = {
     },
   },
   paths: {
+    '/admin/dashboard': { get: { tags: ['admin'], summary: 'Get cross-tenant SaaS health and usage dashboard', security: bearer, responses: { 200: ok, ...errorResponses } } },
+    '/admin/tenants': { get: { tags: ['admin'], summary: 'List tenants with owner, plan and usage counts', security: bearer, responses: { 200: ok, ...errorResponses } }, post: { tags: ['admin'], summary: 'Provision tenant, owner and subscription atomically', security: bearer, responses: { 201: ok, ...errorResponses } } },
+    '/admin/plans': { get: { tags: ['admin'], summary: 'List SaaS plans and entitlements', security: bearer, responses: { 200: ok, ...errorResponses } } },
+    '/admin/subscriptions': { get: { tags: ['admin'], summary: 'List tenant subscriptions', security: bearer, responses: { 200: ok, ...errorResponses } } },
+    '/admin/usage': { get: { tags: ['admin'], summary: 'Read quota usage for all tenants', security: bearer, responses: { 200: ok, ...errorResponses } } },
+    '/admin/queue': { get: { tags: ['admin'], summary: 'Inspect outbound queues and paused state', security: bearer, responses: { 200: ok, ...errorResponses } } },
+    '/admin/emergency-stop': { post: { tags: ['admin'], summary: 'Pause all outbound queues and campaigns', security: bearer, responses: { 201: accepted, ...errorResponses } }, delete: { tags: ['admin'], summary: 'Resume outbound queues', security: bearer, responses: { 200: ok, ...errorResponses } } },
     '/auth/register': { post: { tags: ['auth'], summary: 'Register user and first workspace', requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/RegisterRequest' } } } }, responses: { 201: ok, ...errorResponses } } },
     '/auth/login': { post: { tags: ['auth'], summary: 'Login', requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/LoginRequest' } } } }, responses: { 201: ok, ...errorResponses } } },
     '/auth/refresh': { post: { tags: ['auth'], summary: 'Rotate refresh token', responses: { 201: ok, ...errorResponses } } },
@@ -72,6 +79,7 @@ export const openApiDocument = {
       post: { tags: ['workspaces'], summary: 'Create workspace', security: bearer, responses: { 201: ok, ...errorResponses } },
     },
     '/workspaces/{workspaceId}': { get: { tags: ['workspaces'], summary: 'Workspace overview', security: bearer, parameters: [workspaceParameter], responses: { 200: ok, ...errorResponses } } },
+    '/workspaces/{workspaceId}/usage': { get: { tags: ['subscriptions'], summary: 'Get effective plan, subscription and quota usage', security: bearer, parameters: [workspaceParameter], responses: { 200: ok, ...errorResponses } } },
     '/workspaces/{workspaceId}/members': { get: { tags: ['workspaces'], summary: 'List members', security: bearer, parameters: [workspaceParameter], responses: { 200: ok, ...errorResponses } } },
     '/workspaces/{workspaceId}/invitations': { post: { tags: ['workspaces'], summary: 'Invite member', security: bearer, parameters: [workspaceParameter], responses: { 201: ok, ...errorResponses } } },
     '/workspaces/{workspaceId}/accounts': {
@@ -80,13 +88,14 @@ export const openApiDocument = {
     },
     '/workspaces/{workspaceId}/accounts/zalo/oauth/start': { post: { tags: ['accounts'], summary: 'Start Zalo OA OAuth v4 with one-time PKCE state', security: bearer, parameters: [workspaceParameter], responses: { 201: ok, ...errorResponses } } },
     '/platforms/zalo/oauth/callback': { get: { tags: ['accounts'], summary: 'Complete Zalo OA OAuth callback and redirect to the frontend', responses: { 303: { description: 'Redirect to the accounts page with the connection result.' }, ...errorResponses } } },
+    '/platforms/zalo/webhook': { post: { tags: ['accounts'], summary: 'Verify, deduplicate and queue a Zalo OA webhook event', parameters: [{ name: 'x-zevent-signature', in: 'header', required: true, schema: { type: 'string' } }], responses: { 201: accepted, ...errorResponses } } },
     '/workspaces/{workspaceId}/accounts/{accountId}/zalo/refresh': { post: { tags: ['accounts'], summary: 'Rotate Zalo OA access and refresh tokens', security: bearer, parameters: [workspaceParameter, { name: 'accountId', in: 'path', required: true, schema: { type: 'string' } }], responses: { 201: ok, ...errorResponses } } },
     '/workspaces/{workspaceId}/accounts/{accountId}/sync': { post: { tags: ['accounts'], summary: 'Request account sync', security: bearer, parameters: [workspaceParameter, { name: 'accountId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 201: accepted, ...errorResponses } } },
     '/workspaces/{workspaceId}/contacts': {
       get: { tags: ['contacts'], summary: 'Search and paginate contacts', security: bearer, parameters: [workspaceParameter], responses: { 200: ok, ...errorResponses } },
       post: { tags: ['contacts'], summary: 'Create contact with source and consent', security: bearer, parameters: [workspaceParameter], responses: { 201: ok, ...errorResponses } },
     },
-    '/workspaces/{workspaceId}/contacts/import': { post: { tags: ['contacts'], summary: 'Import up to 5,000 consent-aware contacts', security: bearer, parameters: [workspaceParameter], responses: { 201: ok, ...errorResponses } } },
+    '/workspaces/{workspaceId}/contacts/import': { post: { tags: ['contacts'], summary: 'Validate and queue up to 5,000 consent-aware contacts', security: bearer, parameters: [workspaceParameter], responses: { 201: accepted, ...errorResponses } } },
     '/workspaces/{workspaceId}/conversations': { get: { tags: ['messages'], summary: 'List conversations', security: bearer, parameters: [workspaceParameter], responses: { 200: ok, ...errorResponses } } },
     '/workspaces/{workspaceId}/conversations/{conversationId}/messages': { get: { tags: ['messages'], summary: 'Get conversation history', security: bearer, parameters: [workspaceParameter], responses: { 200: ok, ...errorResponses } } },
     '/workspaces/{workspaceId}/messages': { post: { tags: ['messages'], summary: 'Validate and queue an outbound message', security: bearer, parameters: [workspaceParameter], responses: { 201: accepted, ...errorResponses } } },

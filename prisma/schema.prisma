@@ -142,62 +142,249 @@ enum TaskStatus {
   CANCELLED
 }
 
+enum SystemRole {
+  SUPER_ADMIN
+  USER
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRING
+  EXPIRED
+  SUSPENDED
+  CANCELLED
+}
+
+enum PlanCode {
+  FREE
+  BASIC
+  PRO
+  BUSINESS
+  ENTERPRISE
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  VOID
+  UNCOLLECTIBLE
+}
+
+enum UsageMetric {
+  MESSAGES
+  CONTACTS
+  ACCOUNTS
+  CAMPAIGNS
+  STORAGE_BYTES
+  API_CALLS
+}
+
+enum SuppressionScope {
+  GLOBAL
+  TENANT
+}
+
+enum SupportSessionStatus {
+  ACTIVE
+  ENDED
+  REVOKED
+  EXPIRED
+}
+
 model User {
-  id                  String                @id @default(cuid())
-  email               String                @unique
+  id                  String                   @id @default(cuid())
+  email               String                   @unique
   passwordHash        String
   displayName         String
   emailVerifiedAt     DateTime?
-  twoFactorEnabled    Boolean               @default(false)
+  twoFactorEnabled    Boolean                  @default(false)
   twoFactorSecretEnc  String?
   resetTokenHash      String?
   resetTokenExpiresAt DateTime?
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
   deletedAt           DateTime?
+  systemRole          SystemRole               @default(USER)
   memberships         WorkspaceMember[]
   refreshTokens       RefreshToken[]
   verificationTokens  EmailVerificationToken[]
   auditLogs           AuditLog[]
   assignedTasks       Task[]
   notifications       Notification[]
-  invitationsSent     WorkspaceInvitation[] @relation("InvitationSender")
+  invitationsSent     WorkspaceInvitation[]    @relation("InvitationSender")
   platformOAuthStates PlatformOAuthState[]
+  supportSessions     SupportSession[]         @relation("SupportAdmin")
 }
 
 model Workspace {
-  id              String                @id @default(cuid())
-  name            String
-  slug            String                @unique
-  timezone        String                @default("Asia/Ho_Chi_Minh")
-  suspendedAt     DateTime?
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
-  deletedAt       DateTime?
-  members         WorkspaceMember[]
-  invitations     WorkspaceInvitation[]
-  roles           Role[]
-  accounts        SocialAccount[]
-  contacts        Contact[]
-  tags            Tag[]
-  groups          Group[]
-  conversations   Conversation[]
-  messages        Message[]
-  templates       MessageTemplate[]
-  mediaAssets     MediaAsset[]
-  campaigns       Campaign[]
-  posts           Post[]
-  automations     Automation[]
-  proxies         Proxy[]
-  syncJobs        SyncJob[]
-  backgroundJobs  BackgroundJob[]
-  auditLogs       AuditLog[]
-  notifications   Notification[]
-  webhookEvents   WebhookEvent[]
-  tasks           Task[]
+  id                  String                @id @default(cuid())
+  name                String
+  slug                String                @unique
+  timezone            String                @default("Asia/Ho_Chi_Minh")
+  status              TenantStatus          @default(ACTIVE)
+  suspendedAt         DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  deletedAt           DateTime?
+  members             WorkspaceMember[]
+  invitations         WorkspaceInvitation[]
+  roles               Role[]
+  accounts            SocialAccount[]
+  contacts            Contact[]
+  tags                Tag[]
+  groups              Group[]
+  conversations       Conversation[]
+  messages            Message[]
+  messageEvents       MessageEvent[]
+  templates           MessageTemplate[]
+  mediaAssets         MediaAsset[]
+  campaigns           Campaign[]
+  posts               Post[]
+  automations         Automation[]
+  proxies             Proxy[]
+  syncJobs            SyncJob[]
+  backgroundJobs      BackgroundJob[]
+  auditLogs           AuditLog[]
+  notifications       Notification[]
+  webhookEvents       WebhookEvent[]
+  tasks               Task[]
   platformOAuthStates PlatformOAuthState[]
+  subscriptions       Subscription[]
+  usageCounters       UsageCounter[]
+  invoices            Invoice[]
+  suppressions        SuppressionEntry[]
+  supportSessions     SupportSession[]
 
   @@index([deletedAt])
+}
+
+model Plan {
+  id                  String         @id @default(cuid())
+  code                PlanCode       @unique
+  name                String
+  description         String?
+  monthlyPriceCents   Int            @default(0)
+  maxZaloAccounts     Int
+  maxUsers            Int
+  maxContacts         Int
+  maxCampaigns        Int
+  maxMessagesPerDay   Int
+  maxMessagesPerMonth Int
+  maxStorageBytes     BigInt
+  automationEnabled   Boolean        @default(false)
+  analyticsEnabled    Boolean        @default(false)
+  apiEnabled          Boolean        @default(false)
+  active              Boolean        @default(true)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  subscriptions       Subscription[]
+  invoices            Invoice[]
+}
+
+model Subscription {
+  id          String             @id @default(cuid())
+  workspaceId String
+  planId      String
+  startAt     DateTime
+  endAt       DateTime
+  status      SubscriptionStatus @default(ACTIVE)
+  autoRenew   Boolean            @default(false)
+  overrides   Json               @default("{}")
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  workspace   Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  plan        Plan               @relation(fields: [planId], references: [id], onDelete: Restrict)
+  invoices    Invoice[]
+
+  @@index([workspaceId, status, endAt])
+}
+
+model UsageCounter {
+  id          String      @id @default(cuid())
+  workspaceId String
+  metric      UsageMetric
+  periodStart DateTime
+  periodEnd   DateTime
+  value       BigInt      @default(0)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, metric, periodStart, periodEnd])
+  @@index([workspaceId, metric, periodEnd])
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  workspaceId    String
+  subscriptionId String?
+  planId         String?
+  number         String        @unique
+  status         InvoiceStatus @default(DRAFT)
+  amountCents    Int
+  currency       String        @default("VND")
+  dueAt          DateTime?
+  paidAt         DateTime?
+  metadata       Json          @default("{}")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  workspace      Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  plan           Plan?         @relation(fields: [planId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, status, createdAt])
+}
+
+model SuppressionEntry {
+  id              String           @id @default(cuid())
+  workspaceId     String?
+  scope           SuppressionScope
+  platform        Platform?
+  platformUserId  String?
+  normalizedPhone String?
+  reason          String
+  source          String
+  createdById     String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  workspace       Workspace?       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, normalizedPhone])
+  @@index([workspaceId, platform, platformUserId])
+}
+
+model SupportSession {
+  id          String               @id @default(cuid())
+  adminId     String
+  workspaceId String
+  reason      String
+  status      SupportSessionStatus @default(ACTIVE)
+  startedAt   DateTime             @default(now())
+  expiresAt   DateTime
+  endedAt     DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  admin       User                 @relation("SupportAdmin", fields: [adminId], references: [id], onDelete: Cascade)
+  workspace   Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([adminId, status, expiresAt])
+  @@index([workspaceId, status])
+}
+
+model SystemControl {
+  id             String   @id
+  outboundPaused Boolean  @default(false)
+  reason         String?
+  updatedById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model WorkspaceMember {
@@ -296,23 +483,23 @@ model EmailVerificationToken {
 }
 
 model SocialAccount {
-  id                String               @id @default(cuid())
+  id                String              @id @default(cuid())
   workspaceId       String
   platform          Platform
   platformAccountId String
   username          String?
   displayName       String
   avatarUrl         String?
-  status            AccountStatus        @default(DISCONNECTED)
-  permissions       Json                 @default("[]")
+  status            AccountStatus       @default(DISCONNECTED)
+  permissions       Json                @default("[]")
   tokenExpiresAt    DateTime?
   lastSyncAt        DateTime?
   lastErrorCode     String?
-  metadata          Json                 @default("{}")
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
+  metadata          Json                @default("{}")
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
   deletedAt         DateTime?
-  workspace         Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace         Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   credential        PlatformCredential?
   friends           Friend[]
   conversations     Conversation[]
@@ -509,32 +696,47 @@ model Conversation {
 }
 
 model Message {
-  id                String            @id @default(cuid())
+  id                String              @id @default(cuid())
   workspaceId       String
   conversationId    String
   accountId         String
   platform          Platform
   platformMessageId String?
-  idempotencyKey    String            @unique
+  idempotencyKey    String              @unique
   senderId          String
   receiverId        String
   content           String
-  messageType       String            @default("TEXT")
+  messageType       String              @default("TEXT")
   direction         MessageDirection
-  status            MessageStatus     @default(QUEUED)
-  timestamp         DateTime          @default(now())
+  status            MessageStatus       @default(QUEUED)
+  timestamp         DateTime            @default(now())
   errorCode         String?
-  metadata          Json              @default("{}")
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-  workspace         Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  conversation      Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  account           SocialAccount     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  metadata          Json                @default("{}")
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  workspace         Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversation      Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  account           SocialAccount       @relation(fields: [accountId], references: [id], onDelete: Cascade)
   attachments       MessageAttachment[]
   campaignMessage   CampaignMessage?
+  events            MessageEvent[]
 
   @@index([workspaceId, status, timestamp])
   @@index([platformMessageId])
+}
+
+model MessageEvent {
+  id          String    @id @default(cuid())
+  workspaceId String
+  messageId   String
+  type        String
+  payload     Json      @default("{}")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  message     Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, messageId, createdAt])
 }
 
 model MessageAttachment {
@@ -599,6 +801,9 @@ model Campaign {
   audienceDefinition Json               @default("{}")
   promotional        Boolean            @default(true)
   scheduledAt        DateTime?
+  endAt              DateTime?
+  timezone           String             @default("Asia/Ho_Chi_Minh")
+  scheduleMode       String             @default("ONE_TIME")
   status             CampaignStatus     @default(DRAFT)
   statistics         Json               @default("{}")
   approvedById       String?
@@ -646,25 +851,25 @@ model CampaignMessage {
 }
 
 model Post {
-  id             String         @id @default(cuid())
+  id             String        @id @default(cuid())
   workspaceId    String
   accountId      String
   title          String?
   content        String
   platform       Platform
-  status         ContentStatus  @default(DRAFT)
+  status         ContentStatus @default(DRAFT)
   scheduledAt    DateTime?
   publishedAt    DateTime?
   platformPostId String?
-  idempotencyKey String         @unique
+  idempotencyKey String        @unique
   approvedById   String?
   approvedAt     DateTime?
   rejectionNote  String?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
-  workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  account        SocialAccount  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  workspace      Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  account        SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
   media          PostMedia[]
   schedule       PostSchedule?
 
@@ -684,15 +889,15 @@ model PostMedia {
 }
 
 model PostSchedule {
-  id          String   @id @default(cuid())
-  postId      String   @unique
-  schedule    String
-  timezone    String   @default("Asia/Ho_Chi_Minh")
-  nextRunAt   DateTime?
-  lastRunAt   DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  id        String    @id @default(cuid())
+  postId    String    @unique
+  schedule  String
+  timezone  String    @default("Asia/Ho_Chi_Minh")
+  nextRunAt DateTime?
+  lastRunAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
 }
 
 model Automation {
@@ -801,21 +1006,21 @@ model SyncJob {
 }
 
 model BackgroundJob {
-  id          String      @id @default(cuid())
+  id          String    @id @default(cuid())
   workspaceId String
   queue       String
-  externalId  String      @unique
+  externalId  String    @unique
   type        String
-  status      JobStatus   @default(PENDING)
-  attempts    Int         @default(0)
+  status      JobStatus @default(PENDING)
+  attempts    Int       @default(0)
   payload     Json
   result      Json?
   error       Json?
   startedAt   DateTime?
   completedAt DateTime?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, queue, status])
 }
@@ -840,7 +1045,7 @@ model Notification {
 
 model AuditLog {
   id          String    @id @default(cuid())
-  workspaceId String
+  workspaceId String?
   userId      String?
   action      String
   resource    String
@@ -850,7 +1055,7 @@ model AuditLog {
   metadata    Json      @default("{}")
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId, createdAt])

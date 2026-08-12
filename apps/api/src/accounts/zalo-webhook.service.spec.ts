@@ -1,0 +1,45 @@
+import { UnauthorizedException } from '@nestjs/common';
+import { createHash } from 'node:crypto';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PrismaService } from '../common/prisma.service';
+import type { QueueService } from '../common/queue.service';
+import { ZaloWebhookService, type ZaloWebhookPayload } from './zalo-webhook.service';
+
+describe('ZaloWebhookService', () => {
+  const originalClientId = process.env.ZALO_CLIENT_ID;
+  const originalSecret = process.env.ZALO_OA_SECRET_KEY;
+
+  beforeEach(() => {
+    process.env.ZALO_CLIENT_ID = 'zalo-app-1';
+    process.env.ZALO_OA_SECRET_KEY = 'oa-secret';
+  });
+
+  afterEach(() => {
+    process.env.ZALO_CLIENT_ID = originalClientId;
+    process.env.ZALO_OA_SECRET_KEY = originalSecret;
+    vi.restoreAllMocks();
+  });
+
+  it('rejects a webhook whose Zalo signature is invalid', async () => {
+    const service = new ZaloWebhookService({} as PrismaService, {} as QueueService);
+    const payload: ZaloWebhookPayload = { app_id: 'zalo-app-1', oa_id: 'oa-1', event_name: 'user_send_text', timestamp: Date.now() };
+    const rawBody = Buffer.from(JSON.stringify(payload));
+    await expect(service.accept(rawBody, 'mac=invalid', payload)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('accepts a correctly signed duplicate without queueing it twice', async () => {
+    const payload: ZaloWebhookPayload = { app_id: 'zalo-app-1', oa_id: 'oa-1', event_name: 'user_send_text', timestamp: Date.now(), message: { msg_id: 'message-1' } };
+    const rawBody = Buffer.from(JSON.stringify(payload));
+    const signature = `mac=${createHash('sha256').update(`zalo-app-1${rawBody.toString('utf8')}${payload.timestamp}oa-secret`).digest('hex')}`;
+    const prisma = {
+      socialAccount: { findFirst: vi.fn().mockResolvedValue({ id: 'account-1', workspaceId: 'tenant-1' }) },
+      backgroundJob: { findUnique: vi.fn().mockResolvedValue({ id: 'job-1' }) },
+    } as unknown as PrismaService;
+    const queueAdd = vi.fn();
+    const queue = { add: queueAdd } as unknown as QueueService;
+    const service = new ZaloWebhookService(prisma, queue);
+
+    await expect(service.accept(rawBody, signature, payload)).resolves.toEqual({ accepted: true, duplicate: true });
+    expect(queueAdd).not.toHaveBeenCalled();
+  });
+});

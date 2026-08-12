@@ -43,10 +43,20 @@ export class AuthService {
       const createdUser = await tx.user.create({ data: { email, displayName: input.displayName, passwordHash } });
       const workspace = await tx.workspace.create({ data: { name: input.workspaceName, slug: this.slug(input.workspaceName) } });
       await tx.workspaceMember.create({ data: { userId: createdUser.id, workspaceId: workspace.id, role: 'OWNER' } });
+      const freePlan = await tx.plan.findUniqueOrThrow({ where: { code: 'FREE' } });
+      await tx.subscription.create({
+        data: {
+          workspaceId: workspace.id,
+          planId: freePlan.id,
+          startAt: new Date(),
+          endAt: new Date(Date.now() + 30 * 86_400_000),
+          status: 'ACTIVE',
+        },
+      });
       await tx.auditLog.create({ data: { workspaceId: workspace.id, userId: createdUser.id, action: 'USER_REGISTERED', resource: 'User', resourceId: createdUser.id, result: 'SUCCESS' } });
       return createdUser;
     });
-    return this.issueTokens({ id: user.id, email: user.email }, metadata);
+    return this.issueTokens({ id: user.id, email: user.email, systemRole: user.systemRole }, metadata);
   }
 
   async login(input: LoginDto, metadata: { ipHash?: string; userAgent?: string }): Promise<TokenPair> {
@@ -55,7 +65,7 @@ export class AuthService {
       throw new UnauthorizedException('Email or password is incorrect.');
     }
     return this.issueTokens(
-      { id: user.id, email: user.email },
+      { id: user.id, email: user.email, systemRole: user.systemRole },
       { ...metadata, ...(input.sessionName ? { sessionName: input.sessionName } : {}) },
     );
   }
@@ -66,11 +76,11 @@ export class AuthService {
   ): Promise<TokenPair> {
     const refreshDays = Number(process.env.JWT_REFRESH_TTL_DAYS ?? 30);
     const accessToken = await this.jwt.signAsync(
-      { sub: user.id, email: user.email, type: 'access' },
+      { sub: user.id, email: user.email, systemRole: user.systemRole, type: 'access' },
       { secret: this.secret('JWT_SECRET'), expiresIn: 900 },
     );
     const refreshToken = await this.jwt.signAsync(
-      { sub: user.id, email: user.email, type: 'refresh', nonce: randomBytes(16).toString('hex') },
+      { sub: user.id, email: user.email, systemRole: user.systemRole, type: 'refresh', nonce: randomBytes(16).toString('hex') },
       { secret: this.secret('JWT_REFRESH_SECRET'), expiresIn: refreshDays * 86_400 },
     );
     await this.prisma.refreshToken.create({
@@ -95,7 +105,9 @@ export class AuthService {
     const stored = await this.prisma.refreshToken.findUnique({ where: { tokenHash: this.hashToken(token) } });
     if (!stored || stored.revokedAt || stored.expiresAt <= new Date()) throw new UnauthorizedException('Refresh session is no longer active.');
     await this.prisma.refreshToken.update({ where: { id: stored.id }, data: { revokedAt: new Date() } });
-    return this.issueTokens({ id: payload.sub, email: payload.email }, metadata);
+    const user = await this.prisma.user.findFirst({ where: { id: payload.sub, deletedAt: null }, select: { id: true, email: true, systemRole: true } });
+    if (!user) throw new UnauthorizedException('User is no longer active.');
+    return this.issueTokens(user, metadata);
   }
 
   async logout(userId: string, refreshToken: string): Promise<void> {

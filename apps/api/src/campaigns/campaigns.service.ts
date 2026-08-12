@@ -1,15 +1,18 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { queues } from '@omni/queue';
 import { PrismaService } from '../common/prisma.service';
-import { MessagesService } from '../messages/messages.service';
+import { QueueService } from '../common/queue.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import type { CreateCampaignDto, ScheduleCampaignDto } from './campaigns.dto';
+import { SubscriptionPolicyService } from '../common/subscription-policy.service';
 
 @Injectable()
 export class CampaignsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly workspaces: WorkspacesService,
-    private readonly messages: MessagesService,
+    private readonly queue: QueueService,
+    private readonly policy: SubscriptionPolicyService,
   ) {}
 
   async list(userId: string, workspaceId: string): Promise<unknown[]> {
@@ -17,8 +20,19 @@ export class CampaignsService {
     return this.prisma.campaign.findMany({ where: { workspaceId, deletedAt: null }, include: { account: { select: { displayName: true, platform: true } }, template: { select: { name: true, version: true } }, _count: { select: { audience: true, messages: true } } }, orderBy: { updatedAt: 'desc' } });
   }
 
+  async detail(userId: string, workspaceId: string, campaignId: string): Promise<unknown> {
+    await this.workspaces.assertMembership(userId, workspaceId);
+    const campaign = await this.prisma.campaign.findFirst({
+      where: { id: campaignId, workspaceId, deletedAt: null },
+      include: { account: true, template: true, audience: { include: { contact: true }, orderBy: { createdAt: 'asc' } }, messages: { include: { message: true }, orderBy: { createdAt: 'desc' } } },
+    });
+    if (!campaign) throw new NotFoundException('Campaign not found.');
+    return campaign;
+  }
+
   async create(userId: string, workspaceId: string, input: CreateCampaignDto): Promise<unknown> {
     await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER']);
+    await this.policy.assertCampaignCapacity(workspaceId);
     const [account, template, contacts] = await Promise.all([
       this.prisma.socialAccount.findFirst({ where: { id: input.accountId, workspaceId, deletedAt: null } }),
       this.prisma.messageTemplate.findFirst({ where: { id: input.templateId, workspaceId, deletedAt: null } }),
@@ -67,22 +81,33 @@ export class CampaignsService {
     const campaign = await this.prisma.campaign.findFirst({ where: { id: campaignId, workspaceId, deletedAt: null }, include: { account: true, template: true, audience: { include: { contact: true } } } });
     if (!campaign || !campaign.account || !campaign.template) throw new NotFoundException('Campaign, account or template not found.');
     if (!['APPROVED', 'SCHEDULED', 'PAUSED'].includes(campaign.status)) throw new BadRequestException('Campaign must be approved before launch.');
-    await this.prisma.campaign.update({ where: { id: campaign.id }, data: { status: 'RUNNING' } });
-    let queued = 0;
-    let blocked = 0;
-    for (const member of campaign.audience) {
-      const idempotencyKey = `campaign:${campaign.id}:contact:${member.contactId}`;
-      const content = campaign.template.content.replaceAll('{{firstName}}', member.contact.displayName.split(/\s+/)[0] ?? member.contact.displayName);
-      await this.messages.send(userId, workspaceId, { accountId: campaign.account.id, contactId: member.contactId, content, promotional: campaign.promotional, idempotencyKey });
-      const message = await this.prisma.message.findUnique({ where: { idempotencyKey } });
-      if (message) {
-        await this.prisma.campaignMessage.upsert({ where: { campaignId_contactId: { campaignId: campaign.id, contactId: member.contactId } }, update: { messageId: message.id, status: message.status, errorCode: message.errorCode }, create: { campaignId: campaign.id, contactId: member.contactId, messageId: message.id, status: message.status, errorCode: message.errorCode } });
-        if (message.status === 'QUEUED') queued += 1; else blocked += 1;
-      }
+    await this.policy.assertOutboundAllowed(workspaceId, campaign.audience.filter((member) => member.status === 'INCLUDED').length);
+    const externalId = `launch-campaign-${campaign.id}`;
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const value = await tx.campaign.update({ where: { id: campaign.id }, data: { status: 'RUNNING' } });
+      await tx.backgroundJob.upsert({ where: { externalId }, update: { status: 'PENDING', error: {}, completedAt: null }, create: { workspaceId, queue: queues.automationExecute, externalId, type: 'CAMPAIGN_START', payload: { campaignId: campaign.id } } });
+      await tx.auditLog.create({ data: { workspaceId, userId, action: 'CAMPAIGN_QUEUED', resource: 'Campaign', resourceId: campaign.id, result: 'SUCCESS', metadata: { eligible: campaign.audience.filter((member) => member.status === 'INCLUDED').length } } });
+      return value;
+    });
+    await this.queue.add(queues.automationExecute, 'campaign-start', { campaignId: campaign.id }, externalId);
+    return updated;
+  }
+
+  async setStatus(userId: string, workspaceId: string, campaignId: string, action: 'pause' | 'resume' | 'cancel'): Promise<unknown> {
+    await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER']);
+    const campaign = await this.prisma.campaign.findFirst({ where: { id: campaignId, workspaceId, deletedAt: null } });
+    if (!campaign) throw new NotFoundException('Campaign not found.');
+    const allowed = action === 'pause' ? ['RUNNING', 'SCHEDULED'] : action === 'resume' ? ['PAUSED'] : ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'SCHEDULED', 'RUNNING', 'PAUSED'];
+    if (!allowed.includes(campaign.status)) throw new BadRequestException(`Campaign cannot ${action} from ${campaign.status}.`);
+    if (action === 'resume') await this.policy.assertOutboundAllowed(workspaceId);
+    const status = action === 'pause' ? 'PAUSED' : action === 'resume' ? 'RUNNING' : 'CANCELLED';
+    const updated = await this.prisma.campaign.update({ where: { id: campaignId }, data: { status } });
+    if (action === 'resume') {
+      const externalId = `resume-campaign-${campaignId}-${Date.now()}`;
+      await this.prisma.backgroundJob.create({ data: { workspaceId, queue: queues.automationExecute, externalId, type: 'CAMPAIGN_RESUME', payload: { campaignId } } });
+      await this.queue.add(queues.automationExecute, 'campaign-resume', { campaignId }, externalId);
     }
-    const status = queued > 0 ? 'RUNNING' : 'FAILED';
-    const updated = await this.prisma.campaign.update({ where: { id: campaign.id }, data: { status, statistics: { queued, sent: 0, failed: 0, blocked } } });
-    await this.prisma.auditLog.create({ data: { workspaceId, userId, action: 'CAMPAIGN_LAUNCHED', resource: 'Campaign', resourceId: campaign.id, result: queued > 0 ? 'SUCCESS' : 'BLOCKED', metadata: { queued, blocked } } });
+    await this.prisma.auditLog.create({ data: { workspaceId, userId, action: `CAMPAIGN_${status}`, resource: 'Campaign', resourceId: campaignId, result: 'SUCCESS' } });
     return updated;
   }
 }

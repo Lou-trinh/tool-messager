@@ -4,6 +4,7 @@ import { PlatformRegistryService } from '../platforms/platform-registry.service'
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import type { CreateAccountDto } from './accounts.dto';
 import { ZaloOAuthService } from './zalo-oauth.service';
+import { SubscriptionPolicyService } from '../common/subscription-policy.service';
 
 @Injectable()
 export class AccountsService {
@@ -12,6 +13,7 @@ export class AccountsService {
     private readonly workspaces: WorkspacesService,
     private readonly platforms: PlatformRegistryService,
     private readonly zaloOAuth: ZaloOAuthService,
+    private readonly policy: SubscriptionPolicyService,
   ) {}
 
   async list(userId: string, workspaceId: string): Promise<unknown[]> {
@@ -23,6 +25,8 @@ export class AccountsService {
 
   async create(userId: string, workspaceId: string, input: CreateAccountDto): Promise<unknown> {
     await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER']);
+    const existing = await this.prisma.socialAccount.findUnique({ where: { workspaceId_platform_platformAccountId: { workspaceId, platform: input.platform, platformAccountId: input.platformAccountId } }, select: { id: true } });
+    if (!existing) await this.policy.assertAccountCapacity(workspaceId);
     const adapter = this.platforms.get(input.platform);
     const account = await this.prisma.socialAccount.upsert({
       where: { workspaceId_platform_platformAccountId: { workspaceId, platform: input.platform, platformAccountId: input.platformAccountId } },

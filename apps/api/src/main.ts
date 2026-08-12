@@ -23,7 +23,7 @@ function validateEnvironment(): void {
 
 async function bootstrap(): Promise<void> {
   validateEnvironment();
-  const app = await NestFactory.create(AppModule, { logger: new JsonLogger() });
+  const app = await NestFactory.create(AppModule, { logger: new JsonLogger(), rawBody: true });
   app.setGlobalPrefix('api/v1', {
     exclude: [{ path: ZALO_SITE_VERIFICATION_PATH, method: RequestMethod.GET }],
   });

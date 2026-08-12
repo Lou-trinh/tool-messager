@@ -4,6 +4,7 @@ import { evaluateMessageSafety } from '@omni/shared';
 import { queues } from '@omni/queue';
 import { PrismaService } from '../common/prisma.service';
 import { QueueService } from '../common/queue.service';
+import { SubscriptionPolicyService } from '../common/subscription-policy.service';
 import { PlatformRegistryService } from '../platforms/platform-registry.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import type { SendMessageDto } from './messages.dto';
@@ -15,11 +16,12 @@ export class MessagesService {
     private readonly workspaces: WorkspacesService,
     private readonly registry: PlatformRegistryService,
     private readonly queue: QueueService,
+    private readonly policy: SubscriptionPolicyService,
   ) {}
 
   async conversations(userId: string, workspaceId: string): Promise<unknown[]> {
     await this.workspaces.assertMembership(userId, workspaceId);
-    return this.prisma.conversation.findMany({ where: { workspaceId }, include: { account: { select: { platform: true, displayName: true } }, contact: { select: { displayName: true, avatarUrl: true, consentStatus: true, suppressed: true } }, messages: { orderBy: { timestamp: 'desc' }, take: 1 } }, orderBy: { lastMessageAt: 'desc' }, take: 100 });
+    return this.prisma.conversation.findMany({ where: { workspaceId }, include: { account: { select: { id: true, platform: true, displayName: true } }, contact: { select: { id: true, displayName: true, avatarUrl: true, consentStatus: true, suppressed: true } }, messages: { orderBy: { timestamp: 'desc' }, take: 1 } }, orderBy: { lastMessageAt: 'desc' }, take: 100 });
   }
 
   async history(userId: string, workspaceId: string, conversationId: string): Promise<unknown[]> {
@@ -33,11 +35,20 @@ export class MessagesService {
     await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR']);
     const existing = await this.prisma.message.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
     if (existing) return { message: existing, duplicatePrevented: true };
+    await this.policy.assertOutboundAllowed(workspaceId);
     const [account, contact] = await Promise.all([
       this.prisma.socialAccount.findFirst({ where: { id: input.accountId, workspaceId, deletedAt: null } }),
       this.prisma.contact.findFirst({ where: { id: input.contactId, workspaceId, deletedAt: null } }),
     ]);
     if (!account || !contact) throw new NotFoundException('Account or contact not found.');
+    const suppressionMatchers = [
+      ...(contact.normalizedPhone ? [{ normalizedPhone: contact.normalizedPhone }] : []),
+      ...(contact.platformUserId ? [{ platform: contact.platform, platformUserId: contact.platformUserId }] : []),
+    ];
+    const suppression = suppressionMatchers.length ? await this.prisma.suppressionEntry.findFirst({
+      where: { OR: [{ scope: 'GLOBAL' }, { scope: 'TENANT', workspaceId }], AND: [{ OR: suppressionMatchers }] },
+      select: { id: true },
+    }) : null;
 
     const adapter = this.registry.get(account.platform);
     const declaredCapability = adapter.capabilities().MESSAGING;
@@ -50,7 +61,7 @@ export class MessagesService {
     const recentMessages = await this.prisma.message.count({ where: { accountId: account.id, direction: 'OUTBOUND', timestamp: { gte: new Date(Date.now() - 60_000) } } });
     const decision = evaluateMessageSafety({
       consentStatus: contact.consentStatus,
-      suppressed: contact.suppressed || contact.status === 'DO_NOT_CONTACT',
+      suppressed: Boolean(suppression) || contact.suppressed || contact.status === 'DO_NOT_CONTACT',
       hasPermission: declaredCapability !== 'PERMISSION_REQUIRED' || permissions.includes('MESSAGING'),
       capability,
       withinRateLimit: recentMessages < Number(process.env.ACCOUNT_MESSAGES_PER_MINUTE ?? 30),

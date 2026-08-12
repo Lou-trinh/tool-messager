@@ -48,7 +48,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <div className="mb-7 flex items-center justify-center gap-3">
           <div className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-teal-300 to-green-500 text-black"><Zap /></div>
-          <div><div className="text-lg font-bold">OmniSocial</div><div className="text-[10px] tracking-[.16em] text-[var(--muted)]">SECURE CONTROL PLANE</div></div>
+          <div><div className="text-lg font-bold">ZaloHub SaaS</div><div className="text-[10px] tracking-[.16em] text-[var(--muted)]">SECURE MULTI-TENANT CONTROL</div></div>
         </div>
         <form className="panel space-y-5 p-7" onSubmit={submit}>
           <div><div className="eyebrow">Welcome back</div><h1 className="mt-2 text-2xl font-bold">Đăng nhập workspace</h1><p className="mt-2 text-sm text-[var(--muted)]">Quản lý social operations trong một giao diện thống nhất.</p></div>

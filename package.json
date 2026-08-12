@@ -1,8 +1,8 @@
 {
-  "name": "omnisocial",
+  "name": "zalohub-saas",
   "version": "0.1.0",
   "private": true,
-  "description": "Consent-aware, API-compliant social operations platform",
+  "description": "Multi-tenant, consent-aware Zalo OA message management SaaS",
   "license": "UNLICENSED",
   "packageManager": "npm@11.9.0",
   "workspaces": [

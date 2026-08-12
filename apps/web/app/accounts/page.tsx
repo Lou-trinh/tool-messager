@@ -29,6 +29,7 @@ interface Notice {
   tone: 'success' | 'danger';
   text: string;
 }
+interface AccountUsage { accounts: { used: number; limit: number } }
 
 export default function AccountsPage() {
   const workspaceId = useSession((state) => state.workspaceId);
@@ -40,6 +41,7 @@ export default function AccountsPage() {
     queryFn: () => api<Account[]>(`/workspaces/${workspaceId}/accounts`),
     enabled: Boolean(workspaceId),
   });
+  const usage = useQuery({ queryKey: ['usage', workspaceId], queryFn: () => api<AccountUsage>(`/workspaces/${workspaceId}/usage`), enabled: Boolean(workspaceId) });
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -78,14 +80,15 @@ export default function AccountsPage() {
   });
 
   const busy = connect.isPending || refresh.isPending || disconnect.isPending;
+  const accountQuotaReached = Boolean(usage.data && usage.data.accounts.used >= usage.data.accounts.limit);
 
   return (
     <AppShell
       title="Tài khoản social"
       subtitle="Kết nối qua OAuth chính thức, theo dõi token expiry và trạng thái đồng bộ."
       action={(
-        <button className="button-primary disabled:cursor-not-allowed disabled:opacity-60" disabled={busy || !workspaceId} onClick={() => connect.mutate()}>
-          {!workspaceId ? 'Đang tải workspace…' : connect.isPending ? 'Đang mở Zalo…' : 'Kết nối Zalo OA'}
+        <button className="button-primary disabled:cursor-not-allowed disabled:opacity-60" disabled={busy || !workspaceId || accountQuotaReached} onClick={() => connect.mutate()}>
+          {!workspaceId ? 'Đang tải workspace…' : accountQuotaReached ? `Đã đủ quota ${usage.data?.accounts.used}/${usage.data?.accounts.limit}` : connect.isPending ? 'Đang mở Zalo…' : 'Kết nối Zalo OA'}
         </button>
       )}
     >

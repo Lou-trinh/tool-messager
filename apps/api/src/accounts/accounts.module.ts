@@ -6,10 +6,12 @@ import { AccountsController } from './accounts.controller';
 import { AccountsService } from './accounts.service';
 import { ZaloOAuthController } from './zalo-oauth.controller';
 import { ZaloOAuthService } from './zalo-oauth.service';
+import { ZaloWebhookController } from './zalo-webhook.controller';
+import { ZaloWebhookService } from './zalo-webhook.service';
 
 @Module({
   imports: [AuthModule, WorkspacesModule, PlatformsModule],
-  controllers: [AccountsController, ZaloOAuthController],
-  providers: [AccountsService, ZaloOAuthService],
+  controllers: [AccountsController, ZaloOAuthController, ZaloWebhookController],
+  providers: [AccountsService, ZaloOAuthService, ZaloWebhookService],
 })
 export class AccountsModule {}

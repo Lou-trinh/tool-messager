@@ -7,12 +7,13 @@ async function main(): Promise<void> {
   const passwordHash = await argon2.hash('DemoPass!2026');
   const user = await prisma.user.upsert({
     where: { email: 'owner@demo.local' },
-    update: { displayName: 'Demo Owner', passwordHash },
+    update: { displayName: 'Demo Owner', passwordHash, systemRole: 'SUPER_ADMIN' },
     create: {
       id: 'demo-owner',
       email: 'owner@demo.local',
       displayName: 'Demo Owner',
       passwordHash,
+      systemRole: 'SUPER_ADMIN',
       emailVerifiedAt: new Date(),
     },
   });
@@ -33,6 +34,18 @@ async function main(): Promise<void> {
     update: { role: 'OWNER', status: 'ACTIVE' },
     create: { workspaceId: workspace.id, userId: user.id, role: 'OWNER' },
   });
+
+  const plans = [
+    { id: 'plan-free', code: 'FREE' as const, name: 'Free', maxZaloAccounts: 1, maxUsers: 1, maxContacts: 250, maxCampaigns: 3, maxMessagesPerDay: 50, maxMessagesPerMonth: 500, maxStorageBytes: 104_857_600n, automationEnabled: false, analyticsEnabled: false, apiEnabled: false },
+    { id: 'plan-basic', code: 'BASIC' as const, name: 'Basic', maxZaloAccounts: 2, maxUsers: 3, maxContacts: 5_000, maxCampaigns: 25, maxMessagesPerDay: 1_000, maxMessagesPerMonth: 10_000, maxStorageBytes: 5_368_709_120n, automationEnabled: false, analyticsEnabled: true, apiEnabled: false },
+    { id: 'plan-pro', code: 'PRO' as const, name: 'Pro', maxZaloAccounts: 5, maxUsers: 10, maxContacts: 25_000, maxCampaigns: 100, maxMessagesPerDay: 5_000, maxMessagesPerMonth: 100_000, maxStorageBytes: 26_843_545_600n, automationEnabled: true, analyticsEnabled: true, apiEnabled: true },
+    { id: 'plan-business', code: 'BUSINESS' as const, name: 'Business', maxZaloAccounts: 15, maxUsers: 50, maxContacts: 100_000, maxCampaigns: 500, maxMessagesPerDay: 20_000, maxMessagesPerMonth: 500_000, maxStorageBytes: 107_374_182_400n, automationEnabled: true, analyticsEnabled: true, apiEnabled: true },
+    { id: 'plan-enterprise', code: 'ENTERPRISE' as const, name: 'Enterprise', maxZaloAccounts: 100, maxUsers: 500, maxContacts: 1_000_000, maxCampaigns: 10_000, maxMessagesPerDay: 100_000, maxMessagesPerMonth: 5_000_000, maxStorageBytes: 1_099_511_627_776n, automationEnabled: true, analyticsEnabled: true, apiEnabled: true },
+  ];
+  for (const plan of plans) await prisma.plan.upsert({ where: { code: plan.code }, update: plan, create: plan });
+  const subscription = await prisma.subscription.findFirst({ where: { workspaceId: workspace.id }, orderBy: { createdAt: 'desc' } });
+  if (!subscription) await prisma.subscription.create({ data: { workspaceId: workspace.id, planId: 'plan-pro', startAt: new Date(), endAt: new Date(Date.now() + 365 * 86_400_000), status: 'ACTIVE' } });
+  await prisma.systemControl.upsert({ where: { id: 'global' }, update: {}, create: { id: 'global', outboundPaused: false } });
 
   const permissionKeys = [
     'workspace.read', 'workspace.manage', 'member.invite', 'account.read', 'account.manage',

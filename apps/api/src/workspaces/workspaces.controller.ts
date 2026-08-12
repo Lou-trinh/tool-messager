@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthUser } from '../auth/auth.types';
@@ -24,4 +24,10 @@ export class WorkspacesController {
 
   @Post(':workspaceId/invitations')
   async invite(@CurrentUser() user: AuthUser, @Param('workspaceId') workspaceId: string, @Body() body: InviteMemberDto): Promise<unknown> { return { success: true, data: await this.workspaces.invite(user.id, workspaceId, body) }; }
+  @Get(':workspaceId/usage')
+  async usage(@CurrentUser() user: AuthUser, @Param('workspaceId') workspaceId: string): Promise<unknown> { return { success: true, data: await this.workspaces.usage(user.id, workspaceId) }; }
+  @Get(':workspaceId/notifications')
+  async notifications(@CurrentUser() user: AuthUser, @Param('workspaceId') workspaceId: string): Promise<unknown> { return { success: true, data: await this.workspaces.notifications(user.id, workspaceId) }; }
+  @Patch(':workspaceId/notifications/:notificationId/read')
+  async readNotification(@CurrentUser() user: AuthUser, @Param('workspaceId') workspaceId: string, @Param('notificationId') notificationId: string): Promise<unknown> { return { success: true, data: await this.workspaces.readNotification(user.id, workspaceId, notificationId) }; }
 }

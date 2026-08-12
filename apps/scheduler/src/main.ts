@@ -15,11 +15,27 @@ async function tick(): Promise<void> {
   if (running) return;
   running = true;
   try {
+    const control = await prisma.systemControl.findUnique({ where: { id: 'global' } });
+    if (control?.outboundPaused) { healthy = true; return; }
     const now = new Date();
-    const [campaigns, posts] = await Promise.all([
+    const warningDate = new Date(now.getTime() + 7 * 86_400_000);
+    const [campaigns, posts, expiredSubscriptions, expiringSubscriptions] = await Promise.all([
       prisma.campaign.findMany({ where: { status: 'SCHEDULED', scheduledAt: { lte: now }, deletedAt: null }, select: { id: true, workspaceId: true } }),
       prisma.post.findMany({ where: { status: 'SCHEDULED', scheduledAt: { lte: now }, deletedAt: null }, select: { id: true, workspaceId: true } }),
+      prisma.subscription.findMany({ where: { status: { in: ['ACTIVE', 'EXPIRING'] }, endAt: { lte: now } }, select: { id: true, workspaceId: true, endAt: true } }),
+      prisma.subscription.findMany({ where: { status: 'ACTIVE', endAt: { gt: now, lte: warningDate } }, select: { id: true, workspaceId: true, endAt: true } }),
     ]);
+    for (const subscription of expiredSubscriptions) {
+      const changed = await prisma.subscription.updateMany({ where: { id: subscription.id, status: { in: ['ACTIVE', 'EXPIRING'] } }, data: { status: 'EXPIRED' } });
+      if (changed.count) {
+        await prisma.campaign.updateMany({ where: { workspaceId: subscription.workspaceId, status: { in: ['RUNNING', 'SCHEDULED'] } }, data: { status: 'PAUSED' } });
+        await prisma.notification.create({ data: { workspaceId: subscription.workspaceId, event: 'SUBSCRIPTION_EXPIRED', title: 'Gói thuê đã hết hạn', body: 'Outbound campaign, gửi tin và xuất bản đã bị tạm khóa.', metadata: { subscriptionId: subscription.id, endAt: subscription.endAt.toISOString() } } });
+      }
+    }
+    for (const subscription of expiringSubscriptions) {
+      const changed = await prisma.subscription.updateMany({ where: { id: subscription.id, status: 'ACTIVE' }, data: { status: 'EXPIRING' } });
+      if (changed.count) await prisma.notification.create({ data: { workspaceId: subscription.workspaceId, event: 'SUBSCRIPTION_EXPIRING', title: 'Gói thuê sắp hết hạn', body: `Gói thuê sẽ hết hạn vào ${subscription.endAt.toISOString()}.`, metadata: { subscriptionId: subscription.id } } });
+    }
     for (const campaign of campaigns) {
       const externalId = `schedule-campaign-${campaign.id}`;
       await prisma.backgroundJob.upsert({ where: { externalId }, update: {}, create: { workspaceId: campaign.workspaceId, queue: queues.automationExecute, externalId, type: 'CAMPAIGN_START', payload: { campaignId: campaign.id } } });
