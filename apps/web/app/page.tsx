@@ -13,9 +13,9 @@ interface WorkspaceItem { role: string; workspace: { id: string; name: string; s
 interface WorkspaceDetail { name: string; _count: { accounts: number; contacts: number; groups: number; conversations: number; campaigns: number; posts: number } }
 
 export default function DashboardPage() {
-  const router = useRouter(); const token = useSession((state) => state.accessToken); const workspaceId = useSession((state) => state.workspaceId); const setWorkspace = useSession((state) => state.setWorkspace);
-  useEffect(() => { if (token === null) router.replace('/login'); }, [router, token]);
-  const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: () => api<WorkspaceItem[]>('/workspaces'), enabled: Boolean(token) });
+  const router = useRouter(); const token = useSession((state) => state.accessToken); const hydrated = useSession((state) => state.hydrated); const workspaceId = useSession((state) => state.workspaceId); const setWorkspace = useSession((state) => state.setWorkspace);
+  useEffect(() => { if (hydrated && token === null) router.replace('/login'); }, [hydrated, router, token]);
+  const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: () => api<WorkspaceItem[]>('/workspaces'), enabled: hydrated && Boolean(token) });
   useEffect(() => { const first = workspaces.data?.[0]?.workspace.id; if (!workspaceId && first) setWorkspace(first); }, [setWorkspace, workspaceId, workspaces.data]);
   const detail = useQuery({ queryKey: ['workspace', workspaceId], queryFn: () => api<WorkspaceDetail>(`/workspaces/${workspaceId}`), enabled: Boolean(workspaceId) });
   const counts = detail.data?._count;

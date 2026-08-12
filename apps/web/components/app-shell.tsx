@@ -39,29 +39,35 @@ export function AppShell({ children, title, subtitle, action }: { children: Reac
   const router = useRouter();
   const accessToken = useSession((state) => state.accessToken);
   const workspaceId = useSession((state) => state.workspaceId);
+  const hydrated = useSession((state) => state.hydrated);
   const setWorkspace = useSession((state) => state.setWorkspace);
   const clear = useSession((state) => state.clear);
   const workspaces = useQuery({
     queryKey: ['workspaces'],
     queryFn: () => api<WorkspaceItem[]>('/workspaces'),
-    enabled: Boolean(accessToken) && !workspaceId,
+    enabled: hydrated && Boolean(accessToken) && !workspaceId,
     retry: false,
   });
 
   useEffect(() => {
+    if (!hydrated) return;
     if (!accessToken) {
       router.replace('/login');
       return;
     }
     const firstWorkspaceId = workspaces.data?.[0]?.workspace.id;
     if (!workspaceId && firstWorkspaceId) setWorkspace(firstWorkspaceId);
-  }, [accessToken, router, setWorkspace, workspaceId, workspaces.data]);
+  }, [accessToken, hydrated, router, setWorkspace, workspaceId, workspaces.data]);
 
   useEffect(() => {
-    if (!workspaces.isError) return;
+    if (!hydrated || !workspaces.isError) return;
     clear();
     router.replace('/login');
-  }, [clear, router, workspaces.isError]);
+  }, [clear, hydrated, router, workspaces.isError]);
+
+  if (!hydrated) {
+    return <div className="grid min-h-screen place-items-center text-sm text-[var(--muted)]">Đang khôi phục phiên đăng nhập...</div>;
+  }
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[244px_1fr]">
