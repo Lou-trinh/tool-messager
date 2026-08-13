@@ -55,7 +55,7 @@ export class CampaignsService {
     if (!account || !template) throw new NotFoundException('Account or template not found.');
     if (account.status !== 'CONNECTED') throw new BadRequestException('The selected platform account is not connected.');
     const contacts = await this.prisma.contact.findMany({
-      where: { AND: [segmentWhere, { platform: account.platform, platformUserId: { not: null } }] },
+      where: { AND: [segmentWhere, { platform: account.platform, platformUserId: { not: null }, source: { not: 'SYNTHETIC_SEED' } }] },
       select: { id: true, consentStatus: true, suppressed: true },
       take: 50_000,
     });
@@ -102,7 +102,7 @@ export class CampaignsService {
     const campaign = await this.prisma.campaign.findFirst({ where: { id: campaignId, workspaceId, deletedAt: null }, include: { account: true, template: true, audience: { include: { contact: true } } } });
     if (!campaign || !campaign.account || !campaign.template) throw new NotFoundException('Campaign, account or template not found.');
     if (!['APPROVED', 'SCHEDULED', 'PAUSED'].includes(campaign.status)) throw new BadRequestException('Campaign must be approved before launch.');
-    const invalidRecipients = campaign.audience.filter((member) => member.status === 'INCLUDED' && (member.contact.platform !== campaign.account!.platform || !member.contact.platformUserId?.trim()));
+    const invalidRecipients = campaign.audience.filter((member) => member.status === 'INCLUDED' && (member.contact.platform !== campaign.account!.platform || !member.contact.platformUserId?.trim() || member.contact.source === 'SYNTHETIC_SEED'));
     if (invalidRecipients.length) throw new BadRequestException(`Campaign contains ${invalidRecipients.length} recipient(s) without a valid ${campaign.account.platform} user_id.`);
     await this.policy.assertOutboundAllowed(workspaceId, campaign.audience.filter((member) => member.status === 'INCLUDED').length);
     const externalId = `launch-campaign-${campaign.id}`;

@@ -12,7 +12,7 @@ type Campaign = { id: string; name: string; platform: string; status: string; pr
 type CampaignDetail = Campaign & { audience: Array<{ id: string; status: string; excludedReason?: string; contact: { id: string; displayName: string; consentStatus: string; suppressed: boolean } }>; messages: unknown[] };
 type Account = { id: string; displayName: string; platform: string; status: string };
 type Template = { id: string; name: string; version: number; status: string };
-type Contact = { id: string; displayName: string; platform: string; consentStatus: string; suppressed: boolean; platformUserId?: string };
+type Contact = { id: string; displayName: string; platform: string; consentStatus: string; suppressed: boolean; platformUserId?: string; source: string };
 type ContactsResponse = { items: Contact[]; pagination: { total: number } };
 type Segment = { id: string; name: string; estimatedSize: number };
 
@@ -46,6 +46,7 @@ export default function CampaignsPage() {
   const eligible = contacts.data?.items.filter((contact) => selectedAccount
     && contact.platform === selectedAccount.platform
     && Boolean(contact.platformUserId?.trim())
+    && contact.source !== 'SYNTHETIC_SEED'
     && !contact.suppressed
     && (!form.promotional || contact.consentStatus === 'OPTED_IN')) ?? [];
   const toggleContact = (id: string) => setForm((current) => ({ ...current, contactIds: current.contactIds.includes(id) ? current.contactIds.filter((value) => value !== id) : [...current.contactIds, id] }));
