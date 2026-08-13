@@ -48,12 +48,17 @@ export class CampaignsService {
       ...(typeof filter.source === 'string' ? { source: { contains: filter.source, mode: 'insensitive' } } : {}),
       ...(typeof filter.search === 'string' ? { OR: [{ displayName: { contains: filter.search, mode: 'insensitive' } }, { normalizedPhone: { contains: filter.search } }, { platformUserId: { contains: filter.search } }] } : {}),
     } : { id: { in: input.contactIds ?? [] }, workspaceId, deletedAt: null };
-    const [account, template, contacts] = await Promise.all([
+    const [account, template] = await Promise.all([
       this.prisma.socialAccount.findFirst({ where: { id: input.accountId, workspaceId, deletedAt: null } }),
       this.prisma.messageTemplate.findFirst({ where: { id: input.templateId, workspaceId, deletedAt: null } }),
-      this.prisma.contact.findMany({ where: segmentWhere, select: { id: true, consentStatus: true, suppressed: true }, take: 50_000 }),
     ]);
     if (!account || !template) throw new NotFoundException('Account or template not found.');
+    if (account.status !== 'CONNECTED') throw new BadRequestException('The selected platform account is not connected.');
+    const contacts = await this.prisma.contact.findMany({
+      where: { AND: [segmentWhere, { platform: account.platform, platformUserId: { not: null } }] },
+      select: { id: true, consentStatus: true, suppressed: true },
+      take: 50_000,
+    });
     if (input.contactIds && contacts.length !== new Set(input.contactIds).size) throw new BadRequestException('One or more audience contacts are invalid.');
     if (!contacts.length) throw new BadRequestException('Audience is empty.');
     const campaign = await this.prisma.campaign.create({
@@ -97,6 +102,8 @@ export class CampaignsService {
     const campaign = await this.prisma.campaign.findFirst({ where: { id: campaignId, workspaceId, deletedAt: null }, include: { account: true, template: true, audience: { include: { contact: true } } } });
     if (!campaign || !campaign.account || !campaign.template) throw new NotFoundException('Campaign, account or template not found.');
     if (!['APPROVED', 'SCHEDULED', 'PAUSED'].includes(campaign.status)) throw new BadRequestException('Campaign must be approved before launch.');
+    const invalidRecipients = campaign.audience.filter((member) => member.status === 'INCLUDED' && (member.contact.platform !== campaign.account!.platform || !member.contact.platformUserId?.trim()));
+    if (invalidRecipients.length) throw new BadRequestException(`Campaign contains ${invalidRecipients.length} recipient(s) without a valid ${campaign.account.platform} user_id.`);
     await this.policy.assertOutboundAllowed(workspaceId, campaign.audience.filter((member) => member.status === 'INCLUDED').length);
     const externalId = `launch-campaign-${campaign.id}`;
     const updated = await this.prisma.$transaction(async (tx) => {
