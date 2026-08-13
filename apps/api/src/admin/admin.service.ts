@@ -2,10 +2,11 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import argon2 from 'argon2';
 import type { Prisma, SubscriptionStatus } from '@omni/database';
 import { queues } from '@omni/queue';
+import { subscriptionDaysRemaining, subscriptionLifecycleStatus, subscriptionWarningDays } from '@omni/shared';
 import { PrismaService } from '../common/prisma.service';
 import { QueueService } from '../common/queue.service';
 import { SubscriptionPolicyService } from '../common/subscription-policy.service';
-import type { ChangePlanDto, CreateTenantDto, ExtendSubscriptionDto, GlobalSuppressionDto, ResetTenantPasswordDto, SupportSessionDto, UpdateTenantDto, UpsertPlanDto } from './admin.dto';
+import type { ChangePlanDto, CreateTenantDto, ExtendSubscriptionDto, GlobalSuppressionDto, ResetTenantPasswordDto, SupportSessionDto, UpdateTenantDto, UpdateTenantQuotaDto, UpsertPlanDto } from './admin.dto';
 
 const outboundQueues = [queues.messageSend, queues.messageRetry, queues.automationExecute, queues.postPublish] as const;
 
@@ -19,13 +20,15 @@ export class AdminService {
 
   async dashboard(): Promise<unknown> {
     const now = new Date();
+    const expiringAt = new Date(now.getTime() + subscriptionWarningDays[0] * 86_400_000);
     const dayStart = new Date(now); dayStart.setUTCHours(0, 0, 0, 0);
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-    const [totalTenants, activeTenants, suspendedTenants, expiredTenants, totalAccounts, connectedAccounts, totalContacts, messagesToday, messagesMonth, activeCampaigns, failedCampaigns, queue, control] = await Promise.all([
+    const [totalTenants, activeTenants, suspendedTenants, expiredTenants, expiringTenants, totalAccounts, connectedAccounts, totalContacts, messagesToday, messagesMonth, activeCampaigns, failedCampaigns, queue, control, expiringSubscriptions] = await Promise.all([
       this.prisma.workspace.count({ where: { deletedAt: null } }),
-      this.prisma.workspace.count({ where: { deletedAt: null, status: 'ACTIVE', suspendedAt: null } }),
+      this.prisma.workspace.count({ where: { deletedAt: null, status: 'ACTIVE', suspendedAt: null, subscriptions: { some: { status: { in: ['ACTIVE', 'EXPIRING'] }, endAt: { gt: expiringAt } } } } }),
       this.prisma.workspace.count({ where: { deletedAt: null, OR: [{ status: 'SUSPENDED' }, { suspendedAt: { not: null } }] } }),
       this.prisma.subscription.count({ where: { OR: [{ status: 'EXPIRED' }, { endAt: { lt: now } }] } }),
+      this.prisma.subscription.count({ where: { status: { in: ['ACTIVE', 'EXPIRING'] }, endAt: { gt: now, lte: expiringAt } } }),
       this.prisma.socialAccount.count({ where: { deletedAt: null } }),
       this.prisma.socialAccount.count({ where: { deletedAt: null, status: 'CONNECTED' } }),
       this.prisma.contact.count({ where: { deletedAt: null } }),
@@ -35,13 +38,17 @@ export class AdminService {
       this.prisma.campaign.count({ where: { deletedAt: null, status: 'FAILED' } }),
       this.queue.overview([...outboundQueues]),
       this.prisma.systemControl.findUnique({ where: { id: 'global' } }),
+      this.prisma.subscription.findMany({ where: { status: { in: ['ACTIVE', 'EXPIRING'] }, endAt: { gt: now, lte: expiringAt } }, include: { workspace: { select: { id: true, name: true, slug: true } }, plan: { select: { code: true, name: true } } }, orderBy: { endAt: 'asc' }, take: 10 }),
     ]);
-    return { tenants: { total: totalTenants, active: activeTenants, expired: expiredTenants, suspended: suspendedTenants }, accounts: { total: totalAccounts, connected: connectedAccounts, disconnected: totalAccounts - connectedAccounts }, contacts: totalContacts, messages: { today: messagesToday, month: messagesMonth }, campaigns: { active: activeCampaigns, failed: failedCampaigns }, queue, system: { outboundPaused: control?.outboundPaused ?? false, reason: control?.reason ?? null, api: 'HEALTHY', worker: 'OBSERVABLE_BY_QUEUE' } };
+    return { tenants: { total: totalTenants, active: activeTenants, expiring: expiringTenants, expired: expiredTenants, suspended: suspendedTenants }, expiringSubscriptions: expiringSubscriptions.map((item) => ({ ...item, daysRemaining: subscriptionDaysRemaining(item.endAt, now) })), accounts: { total: totalAccounts, connected: connectedAccounts, disconnected: totalAccounts - connectedAccounts }, contacts: totalContacts, messages: { today: messagesToday, month: messagesMonth }, campaigns: { active: activeCampaigns, failed: failedCampaigns }, queue, system: { outboundPaused: control?.outboundPaused ?? false, reason: control?.reason ?? null, api: 'HEALTHY', worker: 'OBSERVABLE_BY_QUEUE' } };
   }
 
   async tenants(): Promise<unknown[]> {
     const items = await this.prisma.workspace.findMany({ where: { deletedAt: null }, include: { members: { where: { role: 'OWNER', status: 'ACTIVE' }, take: 1, include: { user: { select: { id: true, displayName: true, email: true } } } }, subscriptions: { include: { plan: true }, orderBy: { createdAt: 'desc' }, take: 1 }, _count: { select: { accounts: true, contacts: true, campaigns: true, messages: true, members: true } } }, orderBy: { createdAt: 'desc' } });
-    return items.map(({ subscriptions, members, ...tenant }) => ({ ...tenant, owner: members[0]?.user ?? null, subscription: subscriptions[0] ? { ...subscriptions[0], plan: { ...subscriptions[0].plan, maxStorageBytes: Number(subscriptions[0].plan.maxStorageBytes) } } : null }));
+    return items.map(({ subscriptions, members, ...tenant }) => {
+      const subscription = subscriptions[0];
+      return { ...tenant, owner: members[0]?.user ?? null, subscription: subscription ? { ...subscription, status: subscriptionLifecycleStatus(subscription.endAt) === 'EXPIRED' ? 'EXPIRED' : subscription.status, daysRemaining: subscriptionDaysRemaining(subscription.endAt), plan: { ...subscription.plan, maxStorageBytes: Number(subscription.plan.maxStorageBytes) } } : null };
+    });
   }
 
   async tenant(tenantId: string): Promise<unknown> {
@@ -81,7 +88,11 @@ export class AdminService {
     const tenant = await this.prisma.workspace.findFirst({ where: { id: tenantId, deletedAt: null } });
     if (!tenant) throw new NotFoundException('Tenant not found.');
     const updated = await this.prisma.workspace.update({ where: { id: tenantId }, data: { status: suspended ? 'SUSPENDED' : 'ACTIVE', suspendedAt: suspended ? new Date() : null } });
-    await this.prisma.subscription.updateMany({ where: { workspaceId: tenantId, status: { in: ['ACTIVE', 'EXPIRING', 'SUSPENDED'] } }, data: { status: suspended ? 'SUSPENDED' : 'ACTIVE' } });
+    const subscription = await this.prisma.subscription.findFirst({ where: { workspaceId: tenantId }, orderBy: { createdAt: 'desc' } });
+    if (subscription) {
+      const lifecycleStatus = subscriptionLifecycleStatus(subscription.endAt);
+      await this.prisma.subscription.update({ where: { id: subscription.id }, data: { status: suspended ? 'SUSPENDED' : lifecycleStatus } });
+    }
     if (suspended) await this.prisma.campaign.updateMany({ where: { workspaceId: tenantId, status: { in: ['RUNNING', 'SCHEDULED'] } }, data: { status: 'PAUSED' } });
     await this.audit(adminId, tenantId, suspended ? 'TENANT_SUSPENDED' : 'TENANT_ACTIVATED', 'Workspace', tenantId);
     return updated;
@@ -103,11 +114,22 @@ export class AdminService {
     return updated;
   }
 
+  async updateTenantQuota(adminId: string, tenantId: string, input: UpdateTenantQuotaDto): Promise<unknown> {
+    const subscription = await this.prisma.subscription.findFirst({ where: { workspaceId: tenantId }, orderBy: { createdAt: 'desc' } });
+    if (!subscription) throw new NotFoundException('Subscription not found.');
+    const current = subscription.overrides && typeof subscription.overrides === 'object' && !Array.isArray(subscription.overrides) ? subscription.overrides as Record<string, unknown> : {};
+    const overrides = { ...current, ...Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) } as Prisma.InputJsonValue;
+    const updated = await this.prisma.subscription.update({ where: { id: subscription.id }, data: { overrides } });
+    await this.audit(adminId, tenantId, 'SUBSCRIPTION_QUOTA_UPDATED', 'Subscription', subscription.id, { overrides });
+    return { ...updated, usage: await this.policy.usage(tenantId) };
+  }
+
   async extendSubscription(adminId: string, tenantId: string, input: ExtendSubscriptionDto): Promise<unknown> {
     const subscription = await this.prisma.subscription.findFirst({ where: { workspaceId: tenantId }, orderBy: { createdAt: 'desc' } });
     if (!subscription) throw new NotFoundException('Subscription not found.');
     const endAt = new Date(input.expirationDate);
-    const status: SubscriptionStatus = endAt > new Date() ? 'ACTIVE' : 'EXPIRED';
+    if (endAt <= subscription.startAt) throw new ConflictException('Expiration date must be after subscription start date.');
+    const status: SubscriptionStatus = subscriptionLifecycleStatus(endAt);
     const updated = await this.prisma.subscription.update({ where: { id: subscription.id }, data: { endAt, status, ...(input.autoRenew !== undefined ? { autoRenew: input.autoRenew } : {}) } });
     await this.audit(adminId, tenantId, 'SUBSCRIPTION_EXTENDED', 'Subscription', subscription.id, { endAt: endAt.toISOString() });
     return updated;

@@ -4,6 +4,7 @@ import { PrismaService } from '../common/prisma.service';
 import type { CreateWorkspaceDto, InviteMemberDto } from './workspaces.dto';
 import { SubscriptionPolicyService } from '../common/subscription-policy.service';
 import { hasPermission, type Permission, type WorkspaceRole } from '@omni/auth';
+import { subscriptionDaysRemaining, subscriptionLifecycleStatus } from '@omni/shared';
 
 @Injectable()
 export class WorkspacesService {
@@ -74,6 +75,38 @@ export class WorkspacesService {
     });
     if (!workspace) throw new NotFoundException('Workspace not found.');
     return workspace;
+  }
+
+  async dashboard(userId: string, workspaceId: string): Promise<unknown> {
+    await this.assertMembership(userId, workspaceId);
+    const now = new Date();
+    const dayStart = new Date(now); dayStart.setUTCHours(0, 0, 0, 0);
+    const [workspace, connectedAccounts, messagesToday, usage] = await Promise.all([
+      this.prisma.workspace.findFirst({
+        where: { id: workspaceId, deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          timezone: true,
+          status: true,
+          suspendedAt: true,
+          subscriptions: { include: { plan: true }, orderBy: { createdAt: 'desc' }, take: 1 },
+          _count: { select: { accounts: true, contacts: true, conversations: true, campaigns: true, posts: true } },
+        },
+      }),
+      this.prisma.socialAccount.count({ where: { workspaceId, deletedAt: null, status: 'CONNECTED' } }),
+      this.prisma.message.count({ where: { workspaceId, direction: 'OUTBOUND', createdAt: { gte: dayStart } } }),
+      this.policy.usage(workspaceId),
+    ]);
+    if (!workspace) throw new NotFoundException('Workspace not found.');
+    const subscription = workspace.subscriptions[0];
+    return {
+      workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug, timezone: workspace.timezone, status: workspace.status, suspendedAt: workspace.suspendedAt },
+      subscription: subscription ? { id: subscription.id, status: subscriptionLifecycleStatus(subscription.endAt) === 'EXPIRED' ? 'EXPIRED' : subscription.status, startAt: subscription.startAt, endAt: subscription.endAt, daysRemaining: subscriptionDaysRemaining(subscription.endAt), autoRenew: subscription.autoRenew, plan: { code: subscription.plan.code, name: subscription.plan.name } } : null,
+      metrics: { ...workspace._count, connectedAccounts, messagesToday },
+      usage,
+    };
   }
 
   async members(userId: string, workspaceId: string): Promise<unknown[]> {

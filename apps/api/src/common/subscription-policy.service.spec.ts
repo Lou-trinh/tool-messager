@@ -19,6 +19,13 @@ describe('SubscriptionPolicyService', () => {
     const prisma = { workspace: { findFirst: vi.fn().mockResolvedValue({ ...activeWorkspace, subscriptions: [{ ...activeWorkspace.subscriptions[0], status: 'EXPIRED' }] }) } } as unknown as PrismaService;
     const policy = new SubscriptionPolicyService(prisma);
     await expect(policy.entitlements('tenant-a')).rejects.toThrow('SUBSCRIPTION_EXPIRED');
+    await expect(policy.subscriptionSnapshot('tenant-a')).resolves.toMatchObject({ subscriptionStatus: 'EXPIRED', planCode: 'BASIC' });
+  });
+
+  it('blocks a subscription that has not started yet', async () => {
+    const prisma = { workspace: { findFirst: vi.fn().mockResolvedValue({ ...activeWorkspace, subscriptions: [{ ...activeWorkspace.subscriptions[0], startAt: new Date('2098-01-01'), endAt: new Date('2099-01-01') }] }) } } as unknown as PrismaService;
+    const policy = new SubscriptionPolicyService(prisma);
+    await expect(policy.entitlements('tenant-a')).rejects.toThrow('SUBSCRIPTION_NOT_STARTED');
   });
 
   it('enforces the daily quota before a job is queued', async () => {

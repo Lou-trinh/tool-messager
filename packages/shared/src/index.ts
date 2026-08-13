@@ -104,3 +104,27 @@ export class OmniError extends Error {
     this.name = 'OmniError';
   }
 }
+
+const millisecondsPerDay = 86_400_000;
+
+export const subscriptionWarningDays = [30, 15, 7, 3, 1] as const;
+export type SubscriptionWarningDay = (typeof subscriptionWarningDays)[number];
+export type SubscriptionLifecycleStatus = 'ACTIVE' | 'EXPIRING' | 'EXPIRED';
+
+export function subscriptionDaysRemaining(endAt: Date, now = new Date()): number {
+  return Math.max(0, Math.ceil((endAt.getTime() - now.getTime()) / millisecondsPerDay));
+}
+
+export function subscriptionLifecycleStatus(endAt: Date, now = new Date()): SubscriptionLifecycleStatus {
+  if (endAt.getTime() <= now.getTime()) return 'EXPIRED';
+  return subscriptionDaysRemaining(endAt, now) <= subscriptionWarningDays[0] ? 'EXPIRING' : 'ACTIVE';
+}
+
+export function subscriptionWarningThreshold(endAt: Date, now = new Date()): SubscriptionWarningDay | null {
+  const remaining = subscriptionDaysRemaining(endAt, now);
+  return subscriptionWarningDays.find((days) => days === remaining) ?? null;
+}
+
+export function subscriptionNotificationKey(subscriptionId: string, endAt: Date, event: 'expired' | `warning-${SubscriptionWarningDay}`): string {
+  return `subscription:${subscriptionId}:${endAt.toISOString()}:${event}`;
+}

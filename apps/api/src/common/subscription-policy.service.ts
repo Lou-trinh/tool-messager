@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable, UnprocessableEntityException } from '@nestjs/common';
 import type { Plan, Subscription } from '@omni/database';
+import { subscriptionLifecycleStatus } from '@omni/shared';
 import { PrismaService } from './prisma.service';
 
 type Entitlements = {
@@ -32,7 +33,7 @@ export class SubscriptionPolicyService {
     return fallback;
   }
 
-  async entitlements(workspaceId: string): Promise<Entitlements> {
+  private async resolveEntitlements(workspaceId: string, enforceActive: boolean): Promise<Entitlements> {
     const workspace = await this.prisma.workspace.findFirst({
       where: { id: workspaceId, deletedAt: null },
       select: {
@@ -45,15 +46,22 @@ export class SubscriptionPolicyService {
         },
       },
     });
-    if (!workspace || workspace.status !== 'ACTIVE' || workspace.suspendedAt) {
+    if (!workspace) throw new ForbiddenException('TENANT_NOT_FOUND: Tenant does not exist.');
+    if (enforceActive && (workspace.status !== 'ACTIVE' || workspace.suspendedAt)) {
       throw new ForbiddenException('TENANT_SUSPENDED: Tenant is not active.');
     }
     const subscription = workspace.subscriptions[0];
     if (!subscription) throw new ForbiddenException('SUBSCRIPTION_NOT_CONFIGURED: Tenant does not have a subscription.');
-    if (subscription.status === 'SUSPENDED' || subscription.status === 'CANCELLED') {
+    const now = new Date();
+    const lifecycleStatus = subscriptionLifecycleStatus(subscription.endAt, now);
+    const effectiveStatus = lifecycleStatus === 'EXPIRED' ? 'EXPIRED' : subscription.status === 'ACTIVE' || subscription.status === 'EXPIRING' ? lifecycleStatus : subscription.status;
+    if (enforceActive && subscription.startAt > now) {
+      throw new ForbiddenException('SUBSCRIPTION_NOT_STARTED: Subscription is not active yet.');
+    }
+    if (enforceActive && (effectiveStatus === 'SUSPENDED' || effectiveStatus === 'CANCELLED')) {
       throw new ForbiddenException(`SUBSCRIPTION_${subscription.status}: Outbound operations are disabled.`);
     }
-    if (subscription.status === 'EXPIRED' || subscription.endAt <= new Date()) {
+    if (enforceActive && effectiveStatus === 'EXPIRED') {
       if (subscription.status !== 'EXPIRED') {
         await this.prisma.subscription.update({ where: { id: subscription.id }, data: { status: 'EXPIRED' } });
       }
@@ -63,7 +71,7 @@ export class SubscriptionPolicyService {
     return {
       planCode: plan.code,
       subscriptionId: subscription.id,
-      subscriptionStatus: subscription.status,
+      subscriptionStatus: effectiveStatus,
       subscriptionStart: subscription.startAt,
       subscriptionEnd: subscription.endAt,
       maxZaloAccounts: this.override(overrides, 'maxZaloAccounts', plan.maxZaloAccounts),
@@ -77,6 +85,14 @@ export class SubscriptionPolicyService {
       analyticsEnabled: this.override(overrides, 'analyticsEnabled', plan.analyticsEnabled),
       apiEnabled: this.override(overrides, 'apiEnabled', plan.apiEnabled),
     };
+  }
+
+  async entitlements(workspaceId: string): Promise<Entitlements> {
+    return this.resolveEntitlements(workspaceId, true);
+  }
+
+  async subscriptionSnapshot(workspaceId: string): Promise<Entitlements> {
+    return this.resolveEntitlements(workspaceId, false);
   }
 
   async assertOutboundAllowed(workspaceId: string, additionalMessages = 1): Promise<Entitlements> {
@@ -118,11 +134,12 @@ export class SubscriptionPolicyService {
   }
 
   async usage(workspaceId: string): Promise<unknown> {
-    const limits = await this.entitlements(workspaceId);
+    const limits = await this.subscriptionSnapshot(workspaceId);
     const now = new Date();
     const dayStart = new Date(now); dayStart.setUTCHours(0, 0, 0, 0);
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-    const [accounts, contacts, campaigns, messagesToday, messagesMonth, storage] = await Promise.all([
+    const [users, accounts, contacts, campaigns, messagesToday, messagesMonth, storage] = await Promise.all([
+      this.prisma.workspaceMember.count({ where: { workspaceId, status: { in: ['ACTIVE', 'INVITED'] } } }),
       this.prisma.socialAccount.count({ where: { workspaceId, deletedAt: null } }),
       this.prisma.contact.count({ where: { workspaceId, deletedAt: null } }),
       this.prisma.campaign.count({ where: { workspaceId, deletedAt: null } }),
@@ -133,6 +150,7 @@ export class SubscriptionPolicyService {
     return {
       plan: limits.planCode,
       subscription: { status: limits.subscriptionStatus, start: limits.subscriptionStart, end: limits.subscriptionEnd },
+      users: { used: users, limit: limits.maxUsers },
       accounts: { used: accounts, limit: limits.maxZaloAccounts },
       contacts: { used: contacts, limit: limits.maxContacts },
       campaigns: { used: campaigns, limit: limits.maxCampaigns },

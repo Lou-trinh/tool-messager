@@ -28,6 +28,19 @@ export class ChangePlanDto {
   @IsOptional() @IsInt() @Min(0) maxMessagesPerMonth?: number;
 }
 
+export class UpdateTenantQuotaDto {
+  @IsOptional() @IsInt() @Min(0) maxZaloAccounts?: number;
+  @IsOptional() @IsInt() @Min(1) maxUsers?: number;
+  @IsOptional() @IsInt() @Min(0) maxContacts?: number;
+  @IsOptional() @IsInt() @Min(0) maxCampaigns?: number;
+  @IsOptional() @IsInt() @Min(0) maxMessagesPerDay?: number;
+  @IsOptional() @IsInt() @Min(0) maxMessagesPerMonth?: number;
+  @IsOptional() @IsInt() @Min(0) maxStorageBytes?: number;
+  @IsOptional() @IsBoolean() automationEnabled?: boolean;
+  @IsOptional() @IsBoolean() analyticsEnabled?: boolean;
+  @IsOptional() @IsBoolean() apiEnabled?: boolean;
+}
+
 export class ExtendSubscriptionDto {
   @IsDateString() expirationDate!: string;
   @IsOptional() @IsBoolean() autoRenew?: boolean;

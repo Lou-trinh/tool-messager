@@ -19,6 +19,9 @@ export class WorkspacesController {
   @Get(':workspaceId')
   async detail(@CurrentUser() user: AuthUser, @Param('workspaceId') workspaceId: string): Promise<unknown> { return { success: true, data: await this.workspaces.detail(user.id, workspaceId) }; }
 
+  @Get(':workspaceId/dashboard')
+  async dashboard(@CurrentUser() user: AuthUser, @Param('workspaceId') workspaceId: string): Promise<unknown> { return { success: true, data: await this.workspaces.dashboard(user.id, workspaceId) }; }
+
   @Get(':workspaceId/members')
   async members(@CurrentUser() user: AuthUser, @Param('workspaceId') workspaceId: string): Promise<unknown> { return { success: true, data: await this.workspaces.members(user.id, workspaceId) }; }
 

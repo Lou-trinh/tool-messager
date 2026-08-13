@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateMessageSafety, type SafetyContext } from './index';
+import {
+  evaluateMessageSafety,
+  subscriptionDaysRemaining,
+  subscriptionLifecycleStatus,
+  subscriptionNotificationKey,
+  subscriptionWarningThreshold,
+  type SafetyContext,
+} from './index';
 
 const safeContext: SafetyContext = {
   consentStatus: 'OPTED_IN',
@@ -24,5 +31,27 @@ describe('evaluateMessageSafety', () => {
   it('always blocks suppressed contacts', () => {
     const result = evaluateMessageSafety({ ...safeContext, suppressed: true, promotional: false });
     expect(result.allowed).toBe(false);
+  });
+});
+
+describe('subscription lifecycle', () => {
+  const now = new Date('2026-08-13T00:00:00.000Z');
+
+  it('classifies active, expiring and expired windows deterministically', () => {
+    expect(subscriptionLifecycleStatus(new Date('2026-10-01T00:00:00.000Z'), now)).toBe('ACTIVE');
+    expect(subscriptionLifecycleStatus(new Date('2026-08-20T00:00:00.000Z'), now)).toBe('EXPIRING');
+    expect(subscriptionLifecycleStatus(new Date('2026-08-13T00:00:00.000Z'), now)).toBe('EXPIRED');
+  });
+
+  it('emits only configured reminder thresholds', () => {
+    expect(subscriptionDaysRemaining(new Date('2026-08-16T00:00:00.000Z'), now)).toBe(3);
+    expect(subscriptionWarningThreshold(new Date('2026-08-16T00:00:00.000Z'), now)).toBe(3);
+    expect(subscriptionWarningThreshold(new Date('2026-08-17T00:00:00.000Z'), now)).toBeNull();
+  });
+
+  it('creates expiry-specific idempotency keys', () => {
+    const first = subscriptionNotificationKey('sub-1', new Date('2026-08-20T00:00:00.000Z'), 'warning-7');
+    const renewed = subscriptionNotificationKey('sub-1', new Date('2026-09-20T00:00:00.000Z'), 'warning-7');
+    expect(first).not.toBe(renewed);
   });
 });

@@ -3,7 +3,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthUser } from '../auth/auth.types';
 import { AdminService } from './admin.service';
-import { ChangePlanDto, CreateTenantDto, EmergencyStopDto, ExtendSubscriptionDto, GlobalSuppressionDto, ResetTenantPasswordDto, SupportSessionDto, UpdateTenantDto, UpsertPlanDto } from './admin.dto';
+import { ChangePlanDto, CreateTenantDto, EmergencyStopDto, ExtendSubscriptionDto, GlobalSuppressionDto, ResetTenantPasswordDto, SupportSessionDto, UpdateTenantDto, UpdateTenantQuotaDto, UpsertPlanDto } from './admin.dto';
 import { SuperAdminGuard } from './super-admin.guard';
 
 @Controller('admin')
@@ -20,6 +20,7 @@ export class AdminController {
   @Post('tenants/:tenantId/suspend') suspend(@CurrentUser() user: AuthUser, @Param('tenantId') tenantId: string): Promise<unknown> { return this.wrap(this.admin.setTenantStatus(user.id, tenantId, true)); }
   @Post('tenants/:tenantId/activate') activate(@CurrentUser() user: AuthUser, @Param('tenantId') tenantId: string): Promise<unknown> { return this.wrap(this.admin.setTenantStatus(user.id, tenantId, false)); }
   @Post('tenants/:tenantId/change-plan') changePlan(@CurrentUser() user: AuthUser, @Param('tenantId') tenantId: string, @Body() body: ChangePlanDto): Promise<unknown> { return this.wrap(this.admin.changePlan(user.id, tenantId, body)); }
+  @Patch('tenants/:tenantId/quota') updateQuota(@CurrentUser() user: AuthUser, @Param('tenantId') tenantId: string, @Body() body: UpdateTenantQuotaDto): Promise<unknown> { return this.wrap(this.admin.updateTenantQuota(user.id, tenantId, body)); }
   @Post('tenants/:tenantId/extend') extend(@CurrentUser() user: AuthUser, @Param('tenantId') tenantId: string, @Body() body: ExtendSubscriptionDto): Promise<unknown> { return this.wrap(this.admin.extendSubscription(user.id, tenantId, body)); }
   @Post('tenants/:tenantId/reset-password') async resetPassword(@CurrentUser() user: AuthUser, @Param('tenantId') tenantId: string, @Body() body: ResetTenantPasswordDto): Promise<unknown> { await this.admin.resetOwnerPassword(user.id, tenantId, body); return { success: true, data: { reset: true } }; }
   @Post('tenants/:tenantId/support-sessions') support(@CurrentUser() user: AuthUser, @Param('tenantId') tenantId: string, @Body() body: SupportSessionDto): Promise<unknown> { return this.wrap(this.admin.startSupportSession(user.id, tenantId, body)); }

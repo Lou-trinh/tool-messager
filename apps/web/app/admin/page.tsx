@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Ban, Building2, ContactRound, Megaphone, MessageSquare, Power, Radio, ShieldAlert, UsersRound } from 'lucide-react';
+import { Activity, AlertTriangle, Ban, Building2, ContactRound, Megaphone, MessageSquare, Power, Radio, ShieldAlert, UsersRound } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { AppShell } from '@/components/app-shell';
@@ -10,7 +10,8 @@ import { api } from '@/lib/api';
 import { useSession } from '@/lib/store';
 
 type Dashboard = {
-  tenants: { total: number; active: number; expired: number; suspended: number };
+  tenants: { total: number; active: number; expiring: number; expired: number; suspended: number };
+  expiringSubscriptions: Array<{ id: string; endAt: string; daysRemaining: number; workspace: { id: string; name: string; slug: string }; plan: { code: string; name: string } }>;
   accounts: { total: number; connected: number; disconnected: number };
   contacts: number;
   messages: { today: number; month: number };
@@ -18,7 +19,7 @@ type Dashboard = {
   queue: Record<string, Record<string, number | boolean>>;
   system: { outboundPaused: boolean; reason?: string };
 };
-type Tenant = { id: string; name: string; slug: string; status: string; suspendedAt?: string; createdAt: string; owner?: { displayName: string; email: string }; subscription?: { status: string; endAt: string; plan: { code: string } }; _count: { accounts: number; contacts: number; campaigns: number; messages: number } };
+type Tenant = { id: string; name: string; slug: string; status: string; suspendedAt?: string; createdAt: string; owner?: { displayName: string; email: string }; subscription?: { status: string; endAt: string; daysRemaining: number; plan: { code: string } }; _count: { accounts: number; contacts: number; campaigns: number; messages: number } };
 type Plan = { id: string; code: string; name: string; description?: string; monthlyPriceCents: number; maxZaloAccounts: number; maxUsers: number; maxContacts: number; maxCampaigns: number; maxMessagesPerDay: number; maxMessagesPerMonth: number; maxStorageBytes: number; automationEnabled: boolean; analyticsEnabled: boolean; apiEnabled: boolean; active: boolean };
 type Suppression = { id: string; normalizedPhone?: string; platform?: string; platformUserId?: string; reason: string; createdAt: string };
 type Audit = { id: string; action: string; resource: string; result: string; createdAt: string; workspace?: { name: string }; user?: { email: string } };
@@ -41,7 +42,7 @@ export default function AdminPage() {
   const create = useMutation({ mutationFn: () => api('/admin/tenants', { method: 'POST', body: JSON.stringify({ ...form, startDate: new Date(form.startDate).toISOString(), expirationDate: new Date(form.expirationDate).toISOString() }) }), onSuccess: async () => { setForm(emptyForm); setError(''); await refresh(); }, onError: (cause: Error) => setError(cause.message) });
   const action = useMutation({ mutationFn: ({ id, operation }: { id: string; operation: 'suspend' | 'activate' }) => api(`/admin/tenants/${id}/${operation}`, { method: 'POST' }), onSuccess: refresh, onError: (cause: Error) => setError(cause.message) });
   const manage = useMutation({
-    mutationFn: async ({ tenant, operation }: { tenant: Tenant; operation: 'plan' | 'extend' | 'reset' | 'support' }) => {
+    mutationFn: async ({ tenant, operation }: { tenant: Tenant; operation: 'plan' | 'quota' | 'extend' | 'reset' | 'support' }) => {
       if (operation === 'plan') {
         const plan = window.prompt('Plan mới: FREE, BASIC, PRO, BUSINESS, ENTERPRISE', tenant.subscription?.plan.code ?? 'BASIC')?.trim().toUpperCase();
         if (!plan) return;
@@ -51,6 +52,12 @@ export default function AdminPage() {
         const expirationDate = window.prompt('Ngày hết hạn mới (YYYY-MM-DD)', tenant.subscription?.endAt.slice(0, 10) ?? '')?.trim();
         if (!expirationDate) return;
         return api(`/admin/tenants/${tenant.id}/extend`, { method: 'POST', body: JSON.stringify({ expirationDate: new Date(expirationDate).toISOString() }) });
+      }
+      if (operation === 'quota') {
+        const maxContacts = Number(window.prompt('Quota contact riêng cho tenant', String(Math.max(tenant._count.contacts, 1_000))) ?? '');
+        const maxMessagesPerMonth = Number(window.prompt('Quota tin nhắn/tháng riêng', '10000') ?? '');
+        if (!Number.isFinite(maxContacts) || !Number.isFinite(maxMessagesPerMonth)) return;
+        return api(`/admin/tenants/${tenant.id}/quota`, { method: 'PATCH', body: JSON.stringify({ maxContacts, maxMessagesPerMonth }) });
       }
       if (operation === 'reset') {
         const temporaryPassword = window.prompt('Mật khẩu tạm mới (12+ ký tự, có hoa/thường/số/ký tự đặc biệt)')?.trim();
@@ -87,14 +94,15 @@ export default function AdminPage() {
     {data?.system.outboundPaused && <div className="mb-5 rounded-xl border border-rose-400/40 bg-rose-400/10 px-5 py-4 font-semibold text-rose-200">SYSTEM OUTBOUND PAUSED · {data.system.reason}</div>}
     {error && <div className="mb-5 rounded-xl border border-rose-400/40 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</div>}
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <Metric label="Tenant" value={data?.tenants.total ?? '—'} detail={`${data?.tenants.active ?? 0} active · ${data?.tenants.suspended ?? 0} suspended`} icon={<Building2 size={18} />} />
+      <Metric label="Tenant" value={data?.tenants.total ?? '—'} detail={`${data?.tenants.active ?? 0} active · ${data?.tenants.expiring ?? 0} sắp hết hạn`} icon={<Building2 size={18} />} />
       <Metric label="Zalo accounts" value={data?.accounts.connected ?? '—'} detail={`${data?.accounts.total ?? 0} total · ${data?.accounts.disconnected ?? 0} disconnected`} icon={<UsersRound size={18} />} />
       <Metric label="Contacts" value={data?.contacts ?? '—'} detail="Cô lập theo tenant" icon={<ContactRound size={18} />} />
       <Metric label="Messages tháng" value={data?.messages.month ?? '—'} detail={`${data?.messages.today ?? 0} hôm nay`} icon={<MessageSquare size={18} />} />
     </div>
+    {data?.expiringSubscriptions.length ? <div className="mt-5 panel border-amber-300/30 p-5"><div className="flex items-center gap-2 text-amber-200"><AlertTriangle size={18} /><h2 className="font-semibold">Tenant cần gia hạn</h2></div><div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{data.expiringSubscriptions.map((item) => <div className="rounded-xl border border-amber-300/20 bg-amber-300/[.05] p-4" key={item.id}><div className="font-semibold">{item.workspace.name}</div><div className="mt-2 text-xs text-[var(--muted)]">{item.plan.code} · hết hạn {new Date(item.endAt).toLocaleDateString('vi-VN')}</div><div className="mt-3 text-sm font-bold text-amber-200">Còn {item.daysRemaining} ngày</div></div>)}</div></div> : null}
     <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_.75fr]">
       <div className="panel overflow-x-auto"><div className="flex items-center justify-between border-b border-[var(--border)] p-5"><div><div className="eyebrow">Tenant management</div><h2 className="mt-2 font-semibold">Khách thuê</h2></div><div className="text-xs text-[var(--muted)]"><Megaphone className="mr-1 inline" size={14} />{data?.campaigns.active ?? 0} campaign active</div></div>
-        <table className="data-table"><thead><tr><th>Tenant</th><th>Plan</th><th>Hết hạn</th><th>Usage</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>{tenants.data?.map((tenant) => <tr key={tenant.id}><td><div className="font-medium">{tenant.name}</div><div className="mt-1 text-xs text-[var(--muted)]">{tenant.owner?.email ?? tenant.slug}</div></td><td>{tenant.subscription?.plan.code ?? '—'}</td><td className="text-xs text-[var(--muted)]">{tenant.subscription ? new Date(tenant.subscription.endAt).toLocaleDateString('vi-VN') : '—'}</td><td className="text-xs text-[var(--muted)]">{tenant._count.accounts} OA · {tenant._count.contacts} contacts · {tenant._count.messages} msg</td><td><Status tone={tenant.status === 'ACTIVE' && !tenant.suspendedAt ? 'success' : 'danger'}>{tenant.suspendedAt ? 'SUSPENDED' : tenant.status}</Status></td><td><div className="flex min-w-64 flex-wrap gap-1"><button className="button-ghost !px-3 !py-2 text-xs" disabled={action.isPending} onClick={() => action.mutate({ id: tenant.id, operation: tenant.suspendedAt ? 'activate' : 'suspend' })}>{tenant.suspendedAt ? <Radio className="mr-1 inline" size={13} /> : <Ban className="mr-1 inline" size={13} />}{tenant.suspendedAt ? 'Kích hoạt' : 'Khóa'}</button>{([['plan', 'Đổi plan'], ['extend', 'Gia hạn'], ['reset', 'Reset MK'], ['support', 'Support']] as const).map(([operation, label]) => <button key={operation} className="button-ghost !px-3 !py-2 text-xs" disabled={manage.isPending} onClick={() => manage.mutate({ tenant, operation })}>{label}</button>)}</div></td></tr>)}</tbody></table>
+        <table className="data-table"><thead><tr><th>Tenant</th><th>Plan</th><th>Hết hạn</th><th>Usage</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>{tenants.data?.map((tenant) => <tr key={tenant.id}><td><div className="font-medium">{tenant.name}</div><div className="mt-1 text-xs text-[var(--muted)]">{tenant.owner?.email ?? tenant.slug}</div></td><td>{tenant.subscription?.plan.code ?? '—'}</td><td className="text-xs text-[var(--muted)]">{tenant.subscription ? <>{new Date(tenant.subscription.endAt).toLocaleDateString('vi-VN')}<div className={tenant.subscription.daysRemaining <= 7 ? 'text-amber-300' : ''}>Còn {tenant.subscription.daysRemaining} ngày</div></> : '—'}</td><td className="text-xs text-[var(--muted)]">{tenant._count.accounts} OA · {tenant._count.contacts} contacts · {tenant._count.messages} msg</td><td><Status tone={tenant.suspendedAt || tenant.subscription?.status === 'EXPIRED' ? 'danger' : tenant.subscription?.status === 'EXPIRING' ? 'warning' : 'success'}>{tenant.suspendedAt ? 'SUSPENDED' : tenant.subscription?.status ?? tenant.status}</Status></td><td><div className="flex min-w-64 flex-wrap gap-1"><button className="button-ghost !px-3 !py-2 text-xs" disabled={action.isPending} onClick={() => action.mutate({ id: tenant.id, operation: tenant.suspendedAt ? 'activate' : 'suspend' })}>{tenant.suspendedAt ? <Radio className="mr-1 inline" size={13} /> : <Ban className="mr-1 inline" size={13} />}{tenant.suspendedAt ? 'Kích hoạt' : 'Khóa'}</button>{([['plan', 'Đổi plan'], ['quota', 'Quota'], ['extend', 'Gia hạn'], ['reset', 'Reset MK'], ['support', 'Support']] as const).map(([operation, label]) => <button key={operation} className="button-ghost !px-3 !py-2 text-xs" disabled={manage.isPending} onClick={() => manage.mutate({ tenant, operation })}>{label}</button>)}</div></td></tr>)}</tbody></table>
       </div>
       <form className="panel grid content-start gap-3 p-5" onSubmit={(event: FormEvent) => { event.preventDefault(); create.mutate(); }}><div><div className="eyebrow">Provisioning</div><h2 className="mt-2 font-semibold">Tạo tenant</h2></div><input className="input" placeholder="Tên công ty" required value={form.companyName} onChange={(event) => setForm({ ...form, companyName: event.target.value, tenantSlug: form.tenantSlug || event.target.value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') })} /><input className="input" placeholder="tenant-slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" required value={form.tenantSlug} onChange={(event) => setForm({ ...form, tenantSlug: event.target.value })} /><div className="grid gap-3 sm:grid-cols-2"><input className="input" placeholder="Tên owner" required value={form.ownerName} onChange={(event) => setForm({ ...form, ownerName: event.target.value })} /><input className="input" type="email" placeholder="Email owner" required value={form.ownerEmail} onChange={(event) => setForm({ ...form, ownerEmail: event.target.value })} /></div><input className="input" type="password" minLength={12} placeholder="Mật khẩu tạm (12+ ký tự mạnh)" required value={form.temporaryPassword} onChange={(event) => setForm({ ...form, temporaryPassword: event.target.value })} /><select className="input" value={form.plan} onChange={(event) => setForm({ ...form, plan: event.target.value })}>{['FREE', 'BASIC', 'PRO', 'BUSINESS', 'ENTERPRISE'].map((plan) => <option key={plan}>{plan}</option>)}</select><div className="grid gap-3 sm:grid-cols-2"><label className="text-xs text-[var(--muted)]">Bắt đầu<input className="input mt-1" type="date" required value={form.startDate} onChange={(event) => setForm({ ...form, startDate: event.target.value })} /></label><label className="text-xs text-[var(--muted)]">Hết hạn<input className="input mt-1" type="date" required value={form.expirationDate} onChange={(event) => setForm({ ...form, expirationDate: event.target.value })} /></label></div><button className="button-primary" disabled={create.isPending}>{create.isPending ? 'Đang tạo...' : 'Tạo tenant + owner + subscription'}</button></form>
     </div>
