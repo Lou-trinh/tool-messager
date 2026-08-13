@@ -35,7 +35,7 @@ export class ZaloWebhookService {
     const account = await this.prisma.socialAccount.findFirst({ where: { platform: 'ZALO', platformAccountId: String(oaId), deletedAt: null }, select: { id: true, workspaceId: true } });
     if (!account) throw new BadRequestException('Zalo OA is not connected to this platform.');
     const eventKey = String(payload.message?.msg_id ?? `${payload.event_name}:${payload.timestamp}`);
-    const externalId = `zalo-webhook:${account.id}:${eventKey}`;
+    const externalId = `zalo-webhook-${account.id}-${createHash('sha256').update(eventKey).digest('hex').slice(0, 32)}`;
     if (await this.prisma.backgroundJob.findUnique({ where: { externalId }, select: { id: true } })) return { accepted: true, duplicate: true };
     const event = await this.prisma.$transaction(async (tx) => {
       const webhook = await tx.webhookEvent.create({ data: { workspaceId: account.workspaceId, direction: 'INBOUND', eventType: payload.event_name!, payload, signature, status: 'PENDING' } });

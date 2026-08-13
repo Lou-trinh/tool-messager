@@ -14,6 +14,7 @@ export const queues = {
   analyticsSync: 'analytics.sync',
   mediaProcess: 'media.process',
   automationExecute: 'automation.execute',
+  deadLetter: 'dead-letter',
 } as const;
 
 export const resilientJobOptions: JobsOptions = {

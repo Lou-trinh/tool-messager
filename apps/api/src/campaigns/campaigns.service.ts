@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@omni/database';
 import { queues } from '@omni/queue';
 import { PrismaService } from '../common/prisma.service';
 import { QueueService } from '../common/queue.service';
@@ -33,13 +34,28 @@ export class CampaignsService {
   async create(userId: string, workspaceId: string, input: CreateCampaignDto): Promise<unknown> {
     await this.workspaces.assertPermission(userId, workspaceId, 'campaign.manage');
     await this.policy.assertCampaignCapacity(workspaceId);
+    if (!input.contactIds?.length && !input.segmentId) throw new BadRequestException('A static audience or segmentId is required.');
+    const segment = input.segmentId ? await this.prisma.segment.findFirst({ where: { id: input.segmentId, workspaceId } }) : null;
+    if (input.segmentId && !segment) throw new NotFoundException('Segment not found.');
+    const filter = segment?.filter && typeof segment.filter === 'object' && !Array.isArray(segment.filter) ? segment.filter as Record<string, unknown> : {};
+    const segmentWhere: Prisma.ContactWhereInput = segment ? {
+      workspaceId,
+      deletedAt: null,
+      ...(typeof filter.platform === 'string' ? { platform: filter.platform as 'ZALO' | 'FACEBOOK' | 'TIKTOK' } : {}),
+      ...(typeof filter.consentStatus === 'string' ? { consentStatus: filter.consentStatus as 'UNKNOWN' | 'OPTED_IN' | 'OPTED_OUT' } : {}),
+      ...(typeof filter.suppressed === 'boolean' ? { suppressed: filter.suppressed } : {}),
+      ...(typeof filter.tagId === 'string' ? { tags: { some: { tagId: filter.tagId } } } : {}),
+      ...(typeof filter.source === 'string' ? { source: { contains: filter.source, mode: 'insensitive' } } : {}),
+      ...(typeof filter.search === 'string' ? { OR: [{ displayName: { contains: filter.search, mode: 'insensitive' } }, { normalizedPhone: { contains: filter.search } }, { platformUserId: { contains: filter.search } }] } : {}),
+    } : { id: { in: input.contactIds ?? [] }, workspaceId, deletedAt: null };
     const [account, template, contacts] = await Promise.all([
       this.prisma.socialAccount.findFirst({ where: { id: input.accountId, workspaceId, deletedAt: null } }),
       this.prisma.messageTemplate.findFirst({ where: { id: input.templateId, workspaceId, deletedAt: null } }),
-      this.prisma.contact.findMany({ where: { id: { in: input.contactIds }, workspaceId, deletedAt: null }, select: { id: true, consentStatus: true, suppressed: true } }),
+      this.prisma.contact.findMany({ where: segmentWhere, select: { id: true, consentStatus: true, suppressed: true }, take: 50_000 }),
     ]);
     if (!account || !template) throw new NotFoundException('Account or template not found.');
-    if (contacts.length !== new Set(input.contactIds).size) throw new BadRequestException('One or more audience contacts are invalid.');
+    if (input.contactIds && contacts.length !== new Set(input.contactIds).size) throw new BadRequestException('One or more audience contacts are invalid.');
+    if (!contacts.length) throw new BadRequestException('Audience is empty.');
     const campaign = await this.prisma.campaign.create({
       data: {
         workspaceId,
@@ -48,7 +64,7 @@ export class CampaignsService {
         name: input.name,
         platform: account.platform,
         promotional: input.promotional ?? true,
-        audienceDefinition: { type: 'STATIC', count: contacts.length },
+        audienceDefinition: segment ? { type: 'SEGMENT', segmentId: segment.id, segmentName: segment.name, count: contacts.length } : { type: 'STATIC', count: contacts.length },
         statistics: { queued: 0, sent: 0, failed: 0, blocked: 0 },
         audience: { create: contacts.map((contact) => ({ contactId: contact.id, status: contact.suppressed || ((input.promotional ?? true) && contact.consentStatus !== 'OPTED_IN') ? 'EXCLUDED' : 'INCLUDED', ...(contact.suppressed ? { excludedReason: 'CONTACT_SUPPRESSED' } : (input.promotional ?? true) && contact.consentStatus !== 'OPTED_IN' ? { excludedReason: 'CONSENT_REQUIRED' } : {}) })) },
       },

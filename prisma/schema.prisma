@@ -102,6 +102,28 @@ enum JobStatus {
   CANCELLED
 }
 
+enum ImportStatus {
+  UPLOADED
+  MAPPING
+  READY
+  QUEUED
+  PROCESSING
+  COMPLETED
+  PARTIAL
+  FAILED
+  CANCELLED
+}
+
+enum ImportRowStatus {
+  PENDING
+  VALID
+  INVALID
+  DUPLICATE
+  IMPORTED
+  SKIPPED
+  FAILED
+}
+
 enum ProxyStatus {
   HEALTHY
   UNHEALTHY
@@ -221,6 +243,7 @@ model User {
   invitationsSent     WorkspaceInvitation[]    @relation("InvitationSender")
   platformOAuthStates PlatformOAuthState[]
   supportSessions     SupportSession[]         @relation("SupportAdmin")
+  importJobs          ImportJob[]
 }
 
 model Workspace {
@@ -239,6 +262,7 @@ model Workspace {
   accounts            SocialAccount[]
   contacts            Contact[]
   tags                Tag[]
+  segments            Segment[]
   groups              Group[]
   conversations       Conversation[]
   messages            Message[]
@@ -261,6 +285,7 @@ model Workspace {
   invoices            Invoice[]
   suppressions        SuppressionEntry[]
   supportSessions     SupportSession[]
+  importJobs          ImportJob[]
 
   @@index([deletedAt])
 }
@@ -580,6 +605,7 @@ model Contact {
   conversations     Conversation[]
   campaignAudience  CampaignAudience[]
   campaignMessages  CampaignMessage[]
+  importRows         ImportRow[]
 
   @@unique([workspaceId, platform, platformUserId])
   @@index([workspaceId, normalizedPhone])
@@ -598,6 +624,22 @@ model Tag {
   contacts    ContactTag[]
 
   @@unique([workspaceId, name])
+}
+
+model Segment {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  name          String
+  description   String?
+  filter        Json      @default("{}")
+  estimatedSize Int       @default(0)
+  lastEvaluated DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId, updatedAt])
 }
 
 model ContactTag {
@@ -1009,6 +1051,60 @@ model SyncJob {
   account          SocialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId, status, nextRunAt])
+}
+
+model ImportJob {
+  id              String       @id @default(cuid())
+  workspaceId     String
+  uploadedById    String
+  fileName        String
+  mimeType        String
+  format          String
+  sizeBytes       BigInt
+  checksum        String
+  status          ImportStatus @default(UPLOADED)
+  detectedColumns Json         @default("[]")
+  mapping         Json         @default("{}")
+  totalRows       Int          @default(0)
+  validRows       Int          @default(0)
+  invalidRows     Int          @default(0)
+  duplicateRows   Int          @default(0)
+  importedRows    Int          @default(0)
+  skippedRows     Int          @default(0)
+  failedRows      Int          @default(0)
+  progress        Int          @default(0)
+  errorSummary    Json         @default("{}")
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  workspace       Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  uploadedBy      User         @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+  rows            ImportRow[]
+
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, status])
+  @@unique([workspaceId, checksum])
+}
+
+model ImportRow {
+  id          String          @id @default(cuid())
+  importJobId String
+  rowNumber   Int
+  raw         Json
+  normalized  Json?
+  status      ImportRowStatus @default(PENDING)
+  errors      Json            @default("[]")
+  dedupeKey   String?
+  contactId   String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  importJob   ImportJob       @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+  contact     Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@unique([importJobId, rowNumber])
+  @@index([importJobId, status, rowNumber])
+  @@index([importJobId, dedupeKey])
 }
 
 model BackgroundJob {

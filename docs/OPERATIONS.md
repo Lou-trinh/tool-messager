@@ -11,6 +11,8 @@
 
 Log API/Nginx có cấu trúc JSON. Theo dõi BullMQ `waiting/active/failed/delayed`, campaign failure rate, adapter rate limit và DB connection saturation.
 
+Queue `dead-letter` giữ bản sao job đã hết retry để điều tra. Không retry hàng loạt trước khi sửa nguyên nhân gốc và xác minh idempotency. Scheduler chạy retention maintenance mặc định mỗi 6 giờ: BackgroundJob/Webhook 30 ngày, ImportJob 90 ngày và Notification 180 ngày; có thể chỉnh bằng các biến `*_RETENTION_DAYS`.
+
 ## Migration
 
 API container chạy `prisma migrate deploy` trước khi start. Production workflow nên:
@@ -40,6 +42,10 @@ Script mặc định dùng database/user dev. Với production, dùng credential
 ## Scaling
 
 Scale worker ngang; giữ scheduler một replica hoặc dùng leader election. BullMQ job ID/idempotency bảo vệ duplicate, nhưng mọi consumer vẫn phải giữ transaction và safety recheck. Nginx có thể thay bằng managed load balancer/TLS ingress.
+
+## Load smoke
+
+Khi đã cài k6, chạy `k6 run -e API_URL=https://your-api.example.com/api/v1 tests/load/api-smoke.k6.js`. Ngưỡng mặc định: lỗi dưới 1% và p95 dưới 750 ms cho health/readiness. Kiểm thử campaign 50.000 contact phải chạy trên staging bằng dữ liệu giả và adapter sandbox/mock chính thức.
 
 ## Zalo OA webhook
 

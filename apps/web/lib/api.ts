@@ -4,7 +4,7 @@ import { useSession } from './store';
 
 const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
 const isGitHubPages = process.env.NEXT_PUBLIC_GITHUB_PAGES === 'true';
-const apiUrl = configuredApiUrl || (isGitHubPages ? '' : 'http://localhost:4000/api/v1');
+export const apiUrl = configuredApiUrl || (isGitHubPages ? '' : 'http://localhost:4000/api/v1');
 
 export class ApiError extends Error {
   constructor(public readonly status: number, message: string) { super(message); }
@@ -19,6 +19,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   const token = useSession.getState().accessToken;
+  const isFormData = typeof FormData !== 'undefined' && init.body instanceof FormData;
   let response: Response;
   try {
     response = await fetch(`${apiUrl}${path}`, {
@@ -27,7 +28,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
         ? AbortSignal.any([init.signal, AbortSignal.timeout(75_000)])
         : AbortSignal.timeout(75_000),
       headers: {
-        'content-type': 'application/json',
+        ...(!isFormData ? { 'content-type': 'application/json' } : {}),
         ...(token ? { authorization: `Bearer ${token}` } : {}),
         ...init.headers,
       },
@@ -41,4 +42,18 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const body = await response.json() as { success?: boolean; data?: T; error?: { message?: string } };
   if (!response.ok) throw new ApiError(response.status, body.error?.message ?? 'Request failed');
   return body.data as T;
+}
+
+export async function apiBlob(path: string): Promise<Blob> {
+  if (!apiUrl) throw new ApiError(503, 'API chưa được cấu hình.');
+  const token = useSession.getState().accessToken;
+  const response = await fetch(`${apiUrl}${path}`, {
+    signal: AbortSignal.timeout(75_000),
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: { message?: string } } | null;
+    throw new ApiError(response.status, body?.error?.message ?? 'Không thể tải tệp.');
+  }
+  return response.blob();
 }

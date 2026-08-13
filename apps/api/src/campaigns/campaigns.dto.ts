@@ -13,10 +13,15 @@ export class CreateCampaignDto {
   templateId!: string;
 
   @IsArray()
+  @IsOptional()
   @ArrayMinSize(1)
   @ArrayMaxSize(50_000)
   @IsString({ each: true })
-  contactIds!: string[];
+  contactIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  segmentId?: string;
 
   @IsOptional()
   @IsBoolean()

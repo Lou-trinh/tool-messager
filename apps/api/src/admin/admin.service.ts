@@ -193,7 +193,30 @@ export class AdminService {
     return this.prisma.auditLog.findMany({ include: { workspace: { select: { name: true, slug: true } }, user: { select: { email: true, displayName: true } } }, orderBy: { createdAt: 'desc' }, take: 500 });
   }
 
-  async queueOverview(): Promise<unknown> { return this.queue.overview([...outboundQueues]); }
+  async queueOverview(): Promise<unknown> { return this.queue.overview([...outboundQueues, queues.deadLetter]); }
+
+  async accounts(): Promise<unknown[]> {
+    return this.prisma.socialAccount.findMany({
+      where: { deletedAt: null },
+      include: { workspace: { select: { id: true, name: true, slug: true, status: true } }, _count: { select: { messages: true, campaigns: true, conversations: true, syncJobs: true } } },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
+  async setAccountPaused(adminId: string, accountId: string, paused: boolean): Promise<unknown> {
+    const account = await this.prisma.socialAccount.findFirst({ where: { id: accountId, deletedAt: null }, include: { credential: { select: { id: true } } } });
+    if (!account) throw new NotFoundException('Social account not found.');
+    const metadata = account.metadata && typeof account.metadata === 'object' && !Array.isArray(account.metadata) ? account.metadata : {};
+    const updated = await this.prisma.socialAccount.update({
+      where: { id: accountId },
+      data: paused
+        ? { status: 'LIMITED', lastErrorCode: 'ADMIN_PAUSED', metadata: { ...metadata, adminPaused: true } }
+        : { status: account.credential ? 'CONNECTED' : 'DISCONNECTED', lastErrorCode: null, metadata: { ...metadata, adminPaused: false } },
+    });
+    if (paused) await this.prisma.campaign.updateMany({ where: { accountId, status: { in: ['RUNNING', 'SCHEDULED'] } }, data: { status: 'PAUSED' } });
+    await this.audit(adminId, account.workspaceId, paused ? 'ACCOUNT_OUTBOUND_PAUSED' : 'ACCOUNT_OUTBOUND_RESUMED', 'SocialAccount', accountId);
+    return updated;
+  }
 
   async globalSuppressions(): Promise<unknown[]> {
     return this.prisma.suppressionEntry.findMany({ where: { scope: 'GLOBAL' }, orderBy: { createdAt: 'desc' } });

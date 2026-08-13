@@ -1,0 +1,5 @@
+Họ tên,Số điện thoại,Zalo ID,Email,Nguồn,Đồng ý
+Nguyễn An,0964566101,zalo-test-001,an@example.test,QA_PHASE_3_R2,đồng ý
+Trần Bình,0964566102,zalo-test-002,binh@example.test,QA_PHASE_3_R2,không
+Lê Chi,123,zalo-test-003,chi@example.test,QA_PHASE_3_R2,đồng ý
+Nguyễn An Trùng,0964566101,zalo-test-004,duplicate@example.test,QA_PHASE_3_R2,đồng ý

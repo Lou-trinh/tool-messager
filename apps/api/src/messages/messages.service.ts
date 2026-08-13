@@ -53,7 +53,7 @@ export class MessagesService {
     const adapter = this.registry.get(account.platform);
     const declaredCapability = adapter.capabilities().MESSAGING;
     const permissions = Array.isArray(account.permissions) ? account.permissions.filter((value): value is string => typeof value === 'string') : [];
-    const capability: CapabilityStatus = !adapter.isConfigured()
+    const capability: CapabilityStatus = !adapter.isConfigured() || account.status !== 'CONNECTED'
       ? 'NOT_CONFIGURED'
       : declaredCapability === 'PERMISSION_REQUIRED' && permissions.includes('MESSAGING')
         ? 'SUPPORTED'
@@ -62,7 +62,7 @@ export class MessagesService {
     const decision = evaluateMessageSafety({
       consentStatus: contact.consentStatus,
       suppressed: Boolean(suppression) || contact.suppressed || contact.status === 'DO_NOT_CONTACT',
-      hasPermission: declaredCapability !== 'PERMISSION_REQUIRED' || permissions.includes('MESSAGING'),
+      hasPermission: account.status === 'CONNECTED' && (declaredCapability !== 'PERMISSION_REQUIRED' || permissions.includes('MESSAGING')),
       capability,
       withinRateLimit: recentMessages < Number(process.env.ACCOUNT_MESSAGES_PER_MINUTE ?? 30),
       promotional: input.promotional ?? false,

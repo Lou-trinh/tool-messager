@@ -34,6 +34,9 @@ export class AdminController {
   @Get('logs') logs(): Promise<unknown> { return this.wrap(this.admin.logs()); }
   @Get('queue') queue(): Promise<unknown> { return this.wrap(this.admin.queueOverview()); }
   @Get('workers') workers(): Promise<unknown> { return this.wrap(this.admin.queueOverview()); }
+  @Get('accounts') accounts(): Promise<unknown> { return this.wrap(this.admin.accounts()); }
+  @Post('accounts/:accountId/pause') pauseAccount(@CurrentUser() user: AuthUser, @Param('accountId') accountId: string): Promise<unknown> { return this.wrap(this.admin.setAccountPaused(user.id, accountId, true)); }
+  @Post('accounts/:accountId/resume') resumeAccount(@CurrentUser() user: AuthUser, @Param('accountId') accountId: string): Promise<unknown> { return this.wrap(this.admin.setAccountPaused(user.id, accountId, false)); }
   @Get('suppressions') suppressions(): Promise<unknown> { return this.wrap(this.admin.globalSuppressions()); }
   @Post('suppressions') addSuppression(@CurrentUser() user: AuthUser, @Body() body: GlobalSuppressionDto): Promise<unknown> { return this.wrap(this.admin.addGlobalSuppression(user.id, body)); }
   @Delete('suppressions/:entryId') async removeSuppression(@CurrentUser() user: AuthUser, @Param('entryId') entryId: string): Promise<unknown> { await this.admin.removeGlobalSuppression(user.id, entryId); return { success: true, data: { removed: true } }; }

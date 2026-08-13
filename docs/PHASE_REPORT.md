@@ -1,53 +1,41 @@
-# Báo cáo triển khai theo phase
+# Báo cáo hoàn thiện Phase 1–8
 
-Ngày cập nhật: 2026-08-12.
+Ngày cập nhật: 2026-08-13.
 
-## Phase 1 — Monorepo, Docker, auth, RBAC, tenant
+## Phase 1–2 — Nền tảng multi-tenant SaaS
 
-Hoàn thành core: npm workspaces, Next/Nest/worker/scheduler, PostgreSQL/Redis/MinIO/Nginx Compose, JWT access/refresh rotation, Argon2, role tenant và tenant boundary. Test cô lập tenant chứng minh thành viên Tenant A bị từ chối trước khi query resource Tenant B.
+Đã hoàn thành monorepo Next.js/NestJS/worker/scheduler, PostgreSQL/Redis/MinIO/Nginx, JWT access/refresh rotation, Argon2, RBAC, tenant isolation, SUPER_ADMIN, plan/subscription/quota, support session và emergency stop toàn hệ thống.
 
-## Phase 2 — SUPER_ADMIN, tenant, plan, subscription, quota
+## Phase 3 — Data Import Center
 
-Hoàn thành: dashboard thống kê, CRUD/activation/suspension tenant, tạo owner, plan/quota override, subscription lifecycle, usage, reset password, support session có thời hạn, global kill switch và global suppression. Audit log hệ thống cho thao tác nhạy cảm.
+Đã hoàn thành pipeline server-side: multipart upload, SHA-256 chống nhập lặp, CSV streaming, XLSX/XLS/JSON parser có giới hạn bộ nhớ, tự nhận diện cột tiếng Việt, mapping chỉnh sửa, chuẩn hóa số điện thoại, validation, dedupe trong file và trong tenant, preview theo trạng thái, commit vào BullMQ, worker theo batch, progress, lịch sử import và tải CSV lỗi. Giới hạn mặc định: CSV 100 MB, XLSX 50 MB, XLS/JSON 20 MB, 1 triệu dòng.
 
-## Phase 3 — Zalo OA
+## Phase 4 — CRM, tag, segment, consent
 
-Hoàn thành: OAuth v4 + PKCE/state một lần, domain/callback server-side, AES-256-GCM credentials, token rotation, account health, gửi tin tư vấn qua OpenAPI, webhook signature + replay window + event deduplication. Adapter trả `NOT_CONFIGURED`/`PERMISSION_REQUIRED` thay vì success giả.
+Đã hoàn thành contact CRUD, tìm kiếm/lọc/pagination, tag, segment động, segment preview, thao tác hàng loạt gắn tag/opt-in/opt-out/suppression/archive, xuất CSV, consent history và tenant/global suppression. Mọi chiến dịch quảng bá kiểm tra lại consent và suppression ngay trước khi gửi.
 
-## Phase 4 — Contacts, import, consent, suppression
+## Phase 5 — Zalo OA & account operations
 
-Hoàn thành core: contact/tags/consent history, tenant/global suppression, validation CSV/JSON/XLSX, duplicate upsert và contact import chạy background queue. Import không tự chuyển consent thành `OPTED_IN`; opt-out webhook lập tức khóa gửi.
+Đã hoàn thành OAuth v4 + PKCE/state một lần, callback server-side, domain verify, AES-256-GCM credentials, refresh-token rotation, account health, sync history, webhook verification/replay protection và dashboard SUPER_ADMIN cho toàn bộ OA. Có nút dừng/mở outbound theo từng OA; worker từ chối account không ở trạng thái CONNECTED.
 
-Giới hạn: UI mapping cột dạng wizard kéo-thả chưa có; parser dùng cột chuẩn/alias. File `.xls` legacy phải đổi sang `.xlsx`.
+Lưu ý: hệ thống chỉ dùng Zalo Official Account API chính thức. Những API/capability chưa được Zalo cấp sẽ trả `NOT_CONFIGURED`, `PERMISSION_REQUIRED` hoặc `NOT_SUPPORTED`; không giả lập thành công và không tự động hóa Zalo cá nhân.
 
-## Phase 5 — Inbox, message, template, history
+## Phase 6 — Inbox, template, campaign, queue
 
-Hoàn thành core: conversation/message/event persistence, inbox webhook, lịch sử và composer queue-based; template CRUD/version/preview; content states. Tin outbound từ composer vẫn qua compliance layer và worker.
+Đã hoàn thành unified inbox, lịch sử message/event, template version/preview, campaign tĩnh hoặc từ segment tối đa 50.000 contact, approve/schedule/launch, fan-out nền, pause/resume/cancel, idempotency, exponential retry, per-account rate limit và dead-letter queue. Emergency stop tồn tại ở ba cấp: toàn hệ thống, tenant và account.
 
-Giới hạn: media upload production chưa được cấu hình S3 ở deploy công khai.
+## Phase 7 — Analytics, usage, notification, audit
 
-## Phase 6 — Campaign, queue, worker, scheduler
+Đã hoàn thành dashboard tenant/admin, usage so với quota, analytics contact/message/campaign/post/queue, xuất CSV và in/PDF từ trình duyệt, notification trong ứng dụng, subscription warning/expiry, queue overview và audit log cho thao tác nhạy cảm.
 
-Hoàn thành: audience snapshot, consent/suppression validation, approve/schedule/launch, background fan-out, pause/resume/cancel, account/platform limit, exponential backoff, retry-after, idempotency và dead-letter retention. Emergency stop được kiểm tra cả khi queue và ngay trước API send.
+## Phase 8 — Security, performance, backup, monitoring
 
-## Phase 7 — Analytics, notification, audit, usage
-
-Hoàn thành core: tenant/admin analytics, plan progress, notification in-app, account/campaign/subscription events, queue overview, worker health và audit. Realtime hiện dùng polling; WebSocket và email/webhook notification outbound là phần mở rộng chưa kích hoạt.
-
-## Phase 8 — Security, backup, monitoring, production Docker
-
-Hoàn thành: Helmet/CORS/validation/throttling, secret fail-fast, encrypted tokens, webhook verification, Prometheus text metrics, structured logs, backup/restore scripts, DR runbook và Compose dev/prod. Render demo gộp process; Compose production tách api/worker/scheduler để scale.
-
-## Phase 9 — Testing và tài liệu
-
-Quality gates đã chạy trên worktree 2026-08-12: 27 tests/10 files, lint không warning, toàn bộ workspace typecheck và Next/Nest/worker/scheduler production build. Docker Compose config hợp lệ. Security dependency audit và image build được ghi lại trong handoff/deploy tương ứng.
+Đã hoàn thành Helmet/CSP, CORS allow-list, DTO whitelist, throttling, secret fail-fast, mã hóa token, webhook signature, file-size/type limit, streaming CSV/batch database, Prometheus metrics, structured logs, health/readiness, retention scheduler, backup/restore scripts, disaster-recovery runbook, Docker Compose dev/prod và k6 smoke profile. Production dependency audit hiện có 0 vulnerability.
 
 ## Acceptance coverage
 
-- Tạo tenant + owner + subscription: SUPER_ADMIN API/UI.
-- BASIC/PRO quota: policy service và admin plan editor.
-- Kết nối Zalo: OAuth OA thật; cần OA thuộc/quản trị bởi tài khoản Zalo đăng nhập.
-- Import/contact/consent/template/campaign: UI + API + queue worker.
-- Tenant A đọc resource Tenant B: `403 Forbidden`, có integration-style service test.
-- Subscription hết hạn hoặc tenant suspended: login/read vẫn dùng được, outbound bị chặn.
-- Không có Zalo permission/config: trả trạng thái/lỗi thật, không fake success.
+- Tenant A không thể truy cập resource Tenant B; có test tenant isolation.
+- Subscription hết hạn hoặc tenant/OA bị dừng vẫn đọc dữ liệu được nhưng outbound bị chặn.
+- Contact quảng bá phải `OPTED_IN`, không suppressed và có permission thật tại thời điểm worker gửi.
+- Tệp import lỗi có preview, trạng thái từng dòng và CSV lỗi; job có retry + DLQ.
+- Production deploy chạy migration trước API/worker/scheduler và có readiness trước khi nhận traffic.

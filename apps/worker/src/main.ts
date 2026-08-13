@@ -12,6 +12,8 @@ import { queues, redisConnectionFromUrl, resilientJobOptions } from '@omni/queue
 import { evaluateMessageSafety, type Platform } from '@omni/shared';
 
 type ImportContact = { platform: Platform; platformUserId?: string; displayName: string; username?: string; phone?: string; email?: string; source: string; consentStatus: 'UNKNOWN' | 'OPTED_IN' | 'OPTED_OUT'; consentSource?: string };
+type StagedImportContact = ImportContact & { normalizedPhone?: string; gender?: string };
+type ContactImportJob = { externalId: string; importJobId?: never } | { externalId: string; importJobId: string };
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type ZaloWebhook = { event_name?: string; timestamp?: string | number; sender?: { id?: string | number; display_name?: string }; recipient?: { id?: string | number; display_name?: string }; message?: { msg_id?: string | number; text?: string; attachments?: JsonValue[] } };
 
@@ -19,6 +21,7 @@ const prisma = new PrismaClient();
 const connection = redisConnectionFromUrl(process.env.REDIS_URL ?? 'redis://localhost:6379');
 const rateRedis = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379', { maxRetriesPerRequest: null });
 const messageQueue = new Queue(queues.messageSend, { connection, defaultJobOptions: resilientJobOptions });
+const deadLetterQueue = new Queue(queues.deadLetter, { connection, defaultJobOptions: { removeOnComplete: false, removeOnFail: false } });
 const adapters = new Map<Platform, PlatformAdapter>([
   ['ZALO', new ZaloAdapter()],
   ['FACEBOOK', new FacebookAdapter()],
@@ -166,6 +169,7 @@ async function processMessage(job: Job<{ messageId: string }>): Promise<void> {
     throw new DelayedError();
   }
   if (campaignLink?.campaign.status === 'CANCELLED') { await blockMessage(message.id, 'CAMPAIGN_CANCELLED'); return; }
+  if (message.account.status !== 'CONNECTED') { await blockMessage(message.id, `ACCOUNT_${message.account.status}`); return; }
   const policyBlock = await outboundBlockReason(message.workspaceId, 0);
   if (policyBlock) { await blockMessage(message.id, policyBlock); return; }
   const contact = message.conversation.contact;
@@ -318,6 +322,75 @@ async function processContactImport(job: Job<{ externalId: string }>): Promise<v
   ]);
 }
 
+async function processStagedContactImport(job: Job<ContactImportJob & { importJobId: string }>): Promise<void> {
+  const [importJob, background] = await Promise.all([
+    prisma.importJob.findUnique({ where: { id: job.data.importJobId } }),
+    prisma.backgroundJob.findUnique({ where: { externalId: job.data.externalId } }),
+  ]);
+  if (!importJob || !background || ['COMPLETED', 'PARTIAL'].includes(importJob.status)) return;
+  const workspace = await prisma.workspace.findFirst({ where: { id: importJob.workspaceId, deletedAt: null }, select: { status: true, suspendedAt: true, subscriptions: { include: { plan: true }, orderBy: { createdAt: 'desc' }, take: 1 } } });
+  const subscription = workspace?.subscriptions[0];
+  if (!workspace || workspace.status !== 'ACTIVE' || workspace.suspendedAt || !subscription || ['EXPIRED', 'SUSPENDED', 'CANCELLED'].includes(subscription.status) || subscription.endAt <= new Date()) throw new Error('SUBSCRIPTION_BLOCKED');
+  const overrides = subscription.overrides && typeof subscription.overrides === 'object' && !Array.isArray(subscription.overrides) ? subscription.overrides as Record<string, unknown> : {};
+  const contactLimit = typeof overrides.maxContacts === 'number' ? overrides.maxContacts : subscription.plan.maxContacts;
+  const current = await prisma.contact.count({ where: { workspaceId: importJob.workspaceId, deletedAt: null } });
+  if (current + importJob.validRows > contactLimit) throw new Error('CONTACT_QUOTA_EXCEEDED');
+
+  await prisma.$transaction([
+    prisma.importJob.update({ where: { id: importJob.id }, data: { status: 'PROCESSING', progress: 0, startedAt: new Date(), importedRows: 0, failedRows: 0 } }),
+    prisma.backgroundJob.update({ where: { id: background.id }, data: { status: 'RUNNING', attempts: { increment: 1 }, startedAt: new Date() } }),
+  ]);
+  let lastRow = 0;
+  let imported = 0;
+  let failed = 0;
+  let raceSkipped = 0;
+  while (true) {
+    const rows = await prisma.importRow.findMany({ where: { importJobId: importJob.id, status: 'VALID', rowNumber: { gt: lastRow } }, orderBy: { rowNumber: 'asc' }, take: 500 });
+    if (!rows.length) break;
+    for (const row of rows) {
+      lastRow = row.rowNumber;
+      try {
+        const input = row.normalized as StagedImportContact;
+        const matchers = [
+          ...(input.platformUserId ? [{ platform: input.platform, platformUserId: input.platformUserId }] : []),
+          ...(input.normalizedPhone ? [{ normalizedPhone: input.normalizedPhone }] : []),
+        ];
+        const existing = matchers.length
+          ? await prisma.contact.findFirst({ where: { workspaceId: importJob.workspaceId, deletedAt: null, OR: matchers } })
+          : null;
+        if (existing) {
+          await prisma.importRow.update({ where: { id: row.id }, data: { status: 'SKIPPED', errors: ['Bản ghi xuất hiện trong danh bạ sau bước preview.'], contactId: existing.id } });
+          raceSkipped += 1;
+          continue;
+        }
+        const contact = await prisma.$transaction(async (tx) => {
+          const created = await tx.contact.create({ data: { workspaceId: importJob.workspaceId, platform: input.platform, ...(input.platformUserId ? { platformUserId: input.platformUserId } : {}), displayName: input.displayName, ...(input.username ? { username: input.username } : {}), ...(input.phone ? { phone: input.phone } : {}), ...(input.normalizedPhone ? { normalizedPhone: input.normalizedPhone } : {}), ...(input.email ? { email: input.email } : {}), ...(input.gender ? { gender: input.gender } : {}), source: input.source, consentStatus: input.consentStatus, suppressed: input.consentStatus === 'OPTED_OUT', status: input.consentStatus === 'OPTED_OUT' ? 'DO_NOT_CONTACT' : 'ACTIVE' } });
+          await tx.contactConsent.create({ data: { contactId: created.id, status: input.consentStatus, source: input.source, consentAt: input.consentStatus === 'OPTED_IN' ? new Date() : null, optOutAt: input.consentStatus === 'OPTED_OUT' ? new Date() : null, proof: { importJobId: importJob.id, rowNumber: row.rowNumber } } });
+          await tx.importRow.update({ where: { id: row.id }, data: { status: 'IMPORTED', contactId: created.id } });
+          return created;
+        });
+        if (contact.id) imported += 1;
+      } catch (error) {
+        failed += 1;
+        await prisma.importRow.update({ where: { id: row.id }, data: { status: 'FAILED', errors: [error instanceof Error ? error.message : 'Không thể import dòng dữ liệu.'] } });
+      }
+    }
+    const processed = imported + failed + raceSkipped;
+    await prisma.importJob.update({ where: { id: importJob.id }, data: { importedRows: imported, failedRows: failed, skippedRows: importJob.skippedRows + raceSkipped, progress: Math.min(99, Math.round(processed / Math.max(1, importJob.validRows) * 100)) } });
+  }
+  const status = failed ? 'PARTIAL' : 'COMPLETED';
+  await prisma.$transaction([
+    prisma.importJob.update({ where: { id: importJob.id }, data: { status, importedRows: imported, failedRows: failed, skippedRows: importJob.skippedRows + raceSkipped, progress: 100, completedAt: new Date() } }),
+    prisma.backgroundJob.update({ where: { id: background.id }, data: { status: 'COMPLETED', result: { importJobId: importJob.id, imported, failed, skipped: raceSkipped, invalid: importJob.invalidRows, duplicate: importJob.duplicateRows }, completedAt: new Date() } }),
+    prisma.auditLog.create({ data: { workspaceId: importJob.workspaceId, userId: importJob.uploadedById, action: 'DATA_IMPORTED', resource: 'ImportJob', resourceId: importJob.id, result: failed ? 'PARTIAL' : 'SUCCESS', metadata: { imported, failed, skipped: raceSkipped, invalid: importJob.invalidRows, duplicate: importJob.duplicateRows } } }),
+  ]);
+}
+
+async function routeContactImport(job: Job<ContactImportJob>): Promise<void> {
+  if ('importJobId' in job.data && job.data.importJobId) return processStagedContactImport(job as Job<ContactImportJob & { importJobId: string }>);
+  return processContactImport(job as Job<{ externalId: string }>);
+}
+
 async function processZaloWebhook(job: Job<{ eventId: string; accountId: string }>): Promise<void> {
   const [event, account] = await Promise.all([
     prisma.webhookEvent.findUnique({ where: { id: job.data.eventId } }),
@@ -371,12 +444,16 @@ async function processZaloWebhook(job: Job<{ eventId: string; accountId: string 
 const messageWorker = new Worker(queues.messageSend, processMessage, { connection, concurrency: Number(process.env.MESSAGE_WORKER_CONCURRENCY ?? 10), limiter: { max: Number(process.env.MESSAGE_WORKER_RATE_MAX ?? 30), duration: 60_000 } });
 const automationWorker = new Worker(queues.automationExecute, processCampaign, { connection, concurrency: 2 });
 const postWorker = new Worker(queues.postPublish, processPost, { connection, concurrency: 3 });
-const contactImportWorker = new Worker(queues.contactImport, processContactImport, { connection, concurrency: 2 });
+const contactImportWorker = new Worker<ContactImportJob>(queues.contactImport, routeContactImport, { connection, concurrency: 2 });
 const webhookWorker = new Worker(queues.webhookProcess, processZaloWebhook, { connection, concurrency: 5 });
 
 for (const worker of [messageWorker, automationWorker, postWorker, contactImportWorker, webhookWorker]) {
   worker.on('error', (error) => { healthy = false; console.error(JSON.stringify({ level: 'error', service: 'worker', message: error.message, timestamp: new Date().toISOString() })); });
   worker.on('completed', () => { healthy = true; });
+  worker.on('failed', async (job, error) => {
+    if (!job || job.attemptsMade < (job.opts.attempts ?? 1)) return;
+    await deadLetterQueue.add('terminal-failure', { sourceQueue: worker.name, sourceJobId: String(job.id), jobName: job.name, data: job.data, attemptsMade: job.attemptsMade, error: error.message, failedAt: new Date().toISOString() });
+  });
 }
 messageWorker.on('failed', async (job, error) => {
   if (!job || job.attemptsMade < (job.opts.attempts ?? 1)) return;
@@ -394,6 +471,7 @@ postWorker.on('failed', async (job, error) => {
 contactImportWorker.on('failed', async (job, error) => {
   if (!job || job.attemptsMade < (job.opts.attempts ?? 1)) return;
   await prisma.backgroundJob.updateMany({ where: { externalId: job.data.externalId }, data: { status: 'FAILED', error: { message: error.message }, completedAt: new Date() } });
+  if ('importJobId' in job.data && job.data.importJobId) await prisma.importJob.updateMany({ where: { id: job.data.importJobId, status: { in: ['QUEUED', 'PROCESSING'] } }, data: { status: 'FAILED', errorSummary: { message: error.message }, completedAt: new Date() } });
 });
 webhookWorker.on('failed', async (job, error) => {
   if (!job || job.attemptsMade < (job.opts.attempts ?? 1)) return;
@@ -411,7 +489,7 @@ healthServer.listen(
 );
 
 async function shutdown(): Promise<void> {
-  await Promise.all([messageWorker.close(), automationWorker.close(), postWorker.close(), contactImportWorker.close(), webhookWorker.close(), messageQueue.close()]);
+  await Promise.all([messageWorker.close(), automationWorker.close(), postWorker.close(), contactImportWorker.close(), webhookWorker.close(), messageQueue.close(), deadLetterQueue.close()]);
   await rateRedis.quit();
   await prisma.$disconnect();
   healthServer.close();

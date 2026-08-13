@@ -11,6 +11,7 @@ const campaignQueue = new Queue(queues.automationExecute, { connection, defaultJ
 const postQueue = new Queue(queues.postPublish, { connection, defaultJobOptions: resilientJobOptions });
 let healthy = true;
 let running = false;
+let lastMaintenanceAt = 0;
 
 async function tick(): Promise<void> {
   if (running) return;
@@ -59,6 +60,18 @@ async function tick(): Promise<void> {
         await prisma.backgroundJob.upsert({ where: { externalId }, update: {}, create: { workspaceId: post.workspaceId, queue: queues.postPublish, externalId, type: 'POST_PUBLISH', payload: { postId: post.id } } });
         await postQueue.add('post-publish', { postId: post.id }, { jobId: externalId });
       }
+    }
+    if (Date.now() - lastMaintenanceAt >= Number(process.env.MAINTENANCE_INTERVAL_MS ?? 21_600_000)) {
+      const day = 86_400_000;
+      const [jobs, webhooks, imports, notifications, oauthStates] = await prisma.$transaction([
+        prisma.backgroundJob.deleteMany({ where: { status: { in: ['COMPLETED', 'FAILED', 'CANCELLED'] }, completedAt: { lt: new Date(Date.now() - Number(process.env.JOB_RETENTION_DAYS ?? 30) * day) } } }),
+        prisma.webhookEvent.deleteMany({ where: { status: { in: ['COMPLETED', 'FAILED', 'CANCELLED'] }, createdAt: { lt: new Date(Date.now() - Number(process.env.WEBHOOK_RETENTION_DAYS ?? 30) * day) } } }),
+        prisma.importJob.deleteMany({ where: { status: { in: ['COMPLETED', 'PARTIAL', 'FAILED', 'CANCELLED'] }, createdAt: { lt: new Date(Date.now() - Number(process.env.IMPORT_RETENTION_DAYS ?? 90) * day) } } }),
+        prisma.notification.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - Number(process.env.NOTIFICATION_RETENTION_DAYS ?? 180) * day) } } }),
+        prisma.platformOAuthState.deleteMany({ where: { expiresAt: { lt: new Date(Date.now() - day) } } }),
+      ]);
+      console.info(JSON.stringify({ level: 'info', service: 'scheduler', message: 'Retention maintenance completed', removed: { jobs: jobs.count, webhooks: webhooks.count, imports: imports.count, notifications: notifications.count, oauthStates: oauthStates.count }, timestamp: new Date().toISOString() }));
+      lastMaintenanceAt = Date.now();
     }
     healthy = true;
   } catch (error: unknown) {

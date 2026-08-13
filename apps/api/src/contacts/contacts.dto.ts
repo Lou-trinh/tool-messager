@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsEmail, IsIn, IsOptional, IsString, Length, ValidateNested } from 'class-validator';
+import { IsArray, IsEmail, IsIn, IsObject, IsOptional, IsString, Length, ValidateNested } from 'class-validator';
+import type { ImportMapping } from './import-engine.service';
 import { consentStatusSchema, platformSchema, type ConsentStatus, type Platform } from '@omni/shared';
 
 export class ContactInputDto {
@@ -45,6 +46,11 @@ export class ImportContactsDto {
   contacts!: ContactInputDto[];
 }
 
+export class ImportMappingDto {
+  @IsObject()
+  mapping!: ImportMapping;
+}
+
 export class UpdateConsentDto {
   @IsIn(consentStatusSchema.options)
   status!: ConsentStatus;
@@ -88,4 +94,37 @@ export class CreateSuppressionDto {
   @IsString()
   @Length(2, 120)
   source!: string;
+}
+
+export class SegmentInputDto {
+  @IsString()
+  @Length(1, 80)
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsObject()
+  filter!: {
+    search?: string;
+    platform?: Platform;
+    consentStatus?: ConsentStatus;
+    suppressed?: boolean;
+    tagId?: string;
+    source?: string;
+  };
+}
+
+export class BulkContactActionDto {
+  @IsArray()
+  @IsString({ each: true })
+  contactIds!: string[];
+
+  @IsIn(['TAG', 'ARCHIVE', 'SUPPRESS', 'OPT_IN', 'OPT_OUT'])
+  operation!: 'TAG' | 'ARCHIVE' | 'SUPPRESS' | 'OPT_IN' | 'OPT_OUT';
+
+  @IsOptional()
+  @IsString()
+  tagId?: string;
 }

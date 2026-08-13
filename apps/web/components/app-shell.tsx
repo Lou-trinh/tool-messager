@@ -1,6 +1,6 @@
 'use client';
 
-import { Activity, Bell, CalendarDays, ChevronDown, ContactRound, CreditCard, Crown, FileStack, Inbox, LayoutDashboard, Megaphone, Network, Search, Settings, ShieldCheck, UsersRound, Workflow, Zap } from 'lucide-react';
+import { Activity, Bell, CalendarDays, ChevronDown, ContactRound, CreditCard, Crown, FileStack, FileUp, Filter, Inbox, LayoutDashboard, Megaphone, Network, Search, Settings, ShieldCheck, UsersRound, Workflow, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
@@ -22,6 +22,8 @@ const nav = [
   { label: 'Tài khoản', href: '/accounts', icon: UsersRound },
   { label: 'Hộp thư', href: '/inbox', icon: Inbox },
   { label: 'Danh bạ', href: '/contacts', icon: ContactRound },
+  { label: 'Nhập dữ liệu', href: '/data', icon: FileUp },
+  { label: 'Phân khúc', href: '/segments', icon: Filter },
   { group: 'Messaging' },
   { label: 'Chiến dịch', href: '/campaigns', icon: Megaphone },
   { label: 'Mẫu tin nhắn', href: '/templates', icon: FileStack },
