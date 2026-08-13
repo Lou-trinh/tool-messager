@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { queues } from '@omni/queue';
 import { PrismaService } from '../common/prisma.service';
@@ -16,6 +16,8 @@ export type ZaloWebhookPayload = {
 
 @Injectable()
 export class ZaloWebhookService {
+  private readonly logger = new Logger(ZaloWebhookService.name);
+
   constructor(private readonly prisma: PrismaService, private readonly queue: QueueService) {}
 
   async accept(rawBody: Buffer | undefined, signature: string | undefined, payload: ZaloWebhookPayload): Promise<{ accepted: true; duplicate?: true; probe?: true }> {
@@ -27,13 +29,22 @@ export class ZaloWebhookService {
     const appId = process.env.ZALO_CLIENT_ID?.trim();
     if (!secret || !appId) throw new ServiceUnavailableException('Zalo webhook secret or ZALO_CLIENT_ID is NOT_CONFIGURED.');
     if (!signature) throw new BadRequestException('Invalid Zalo webhook envelope.');
-    if (String(payload.app_id) !== appId) throw new UnauthorizedException('Zalo webhook app_id mismatch.');
+    if (String(payload.app_id) !== appId) {
+      this.logger.warn(`Rejected Zalo webhook: app_id mismatch (event=${payload.event_name}).`);
+      throw new UnauthorizedException('Zalo webhook app_id mismatch.');
+    }
     const timestamp = Number(payload.timestamp);
-    if (!Number.isFinite(timestamp) || Math.abs(Date.now() - timestamp) > 10 * 60_000) throw new UnauthorizedException('Zalo webhook timestamp is outside the replay window.');
+    if (!Number.isFinite(timestamp) || Math.abs(Date.now() - timestamp) > 10 * 60_000) {
+      this.logger.warn(`Rejected Zalo webhook: timestamp outside replay window (event=${payload.event_name}, timestamp=${String(payload.timestamp)}).`);
+      throw new UnauthorizedException('Zalo webhook timestamp is outside the replay window.');
+    }
     const expected = `mac=${createHash('sha256').update(`${appId}${rawBody.toString('utf8')}${String(payload.timestamp)}${secret}`).digest('hex')}`;
     const actualBuffer = Buffer.from(signature);
     const expectedBuffer = Buffer.from(expected);
-    if (actualBuffer.length !== expectedBuffer.length || !timingSafeEqual(actualBuffer, expectedBuffer)) throw new UnauthorizedException('Invalid Zalo webhook signature.');
+    if (actualBuffer.length !== expectedBuffer.length || !timingSafeEqual(actualBuffer, expectedBuffer)) {
+      this.logger.warn(`Rejected Zalo webhook: invalid signature (event=${payload.event_name}).`);
+      throw new UnauthorizedException('Invalid Zalo webhook signature.');
+    }
     const oaId = payload.oa_id ?? (payload.event_name.startsWith('user_') ? payload.recipient?.id : payload.sender?.id);
     if (!oaId) throw new BadRequestException('Zalo webhook does not identify its OA.');
     const account = await this.prisma.socialAccount.findFirst({ where: { platform: 'ZALO', platformAccountId: String(oaId), deletedAt: null }, select: { id: true, workspaceId: true } });
