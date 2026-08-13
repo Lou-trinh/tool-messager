@@ -7,6 +7,7 @@ import { ZaloWebhookService, type ZaloWebhookPayload } from './zalo-webhook.serv
 
 describe('ZaloWebhookService', () => {
   const originalClientId = process.env.ZALO_CLIENT_ID;
+  const originalClientSecret = process.env.ZALO_CLIENT_SECRET;
   const originalSecret = process.env.ZALO_OA_SECRET_KEY;
 
   beforeEach(() => {
@@ -16,6 +17,7 @@ describe('ZaloWebhookService', () => {
 
   afterEach(() => {
     process.env.ZALO_CLIENT_ID = originalClientId;
+    process.env.ZALO_CLIENT_SECRET = originalClientSecret;
     process.env.ZALO_OA_SECRET_KEY = originalSecret;
     vi.restoreAllMocks();
   });
@@ -28,6 +30,21 @@ describe('ZaloWebhookService', () => {
 
     await expect(service.accept(Buffer.from('{}'), undefined, {})).resolves.toEqual({ accepted: true, probe: true });
     expect(queueAdd).not.toHaveBeenCalled();
+  });
+
+  it('uses the existing Zalo app secret when no separate OA secret is configured', async () => {
+    delete process.env.ZALO_OA_SECRET_KEY;
+    process.env.ZALO_CLIENT_SECRET = 'app-secret';
+    const payload: ZaloWebhookPayload = { app_id: 'zalo-app-1', oa_id: 'oa-1', event_name: 'user_send_text', timestamp: Date.now(), message: { msg_id: 'message-2' } };
+    const rawBody = Buffer.from(JSON.stringify(payload));
+    const signature = `mac=${createHash('sha256').update(`zalo-app-1${rawBody.toString('utf8')}${payload.timestamp}app-secret`).digest('hex')}`;
+    const prisma = {
+      socialAccount: { findFirst: vi.fn().mockResolvedValue({ id: 'account-1', workspaceId: 'tenant-1' }) },
+      backgroundJob: { findUnique: vi.fn().mockResolvedValue({ id: 'job-1' }) },
+    } as unknown as PrismaService;
+    const service = new ZaloWebhookService(prisma, { add: vi.fn() } as unknown as QueueService);
+
+    await expect(service.accept(rawBody, signature, payload)).resolves.toEqual({ accepted: true, duplicate: true });
   });
 
   it('rejects a webhook whose Zalo signature is invalid', async () => {

@@ -22,11 +22,11 @@ export class ZaloWebhookService {
     // Zalo Developers checks reachability with an unsigned POST before it lets an
     // operator save the webhook URL. Acknowledge that probe without persisting or
     // queueing anything; every actual event below still requires a valid signature.
-    if (!signature) return { accepted: true, probe: true };
-    const secret = process.env.ZALO_OA_SECRET_KEY?.trim();
+    if (!rawBody?.length || !payload.app_id || !payload.timestamp || !payload.event_name) return { accepted: true, probe: true };
+    const secret = process.env.ZALO_OA_SECRET_KEY?.trim() || process.env.ZALO_CLIENT_SECRET?.trim();
     const appId = process.env.ZALO_CLIENT_ID?.trim();
-    if (!secret || !appId) throw new ServiceUnavailableException('ZALO_OA_SECRET_KEY or ZALO_CLIENT_ID is NOT_CONFIGURED.');
-    if (!rawBody?.length || !signature || !payload.app_id || !payload.timestamp || !payload.event_name) throw new BadRequestException('Invalid Zalo webhook envelope.');
+    if (!secret || !appId) throw new ServiceUnavailableException('Zalo webhook secret or ZALO_CLIENT_ID is NOT_CONFIGURED.');
+    if (!signature) throw new BadRequestException('Invalid Zalo webhook envelope.');
     if (String(payload.app_id) !== appId) throw new UnauthorizedException('Zalo webhook app_id mismatch.');
     const timestamp = Number(payload.timestamp);
     if (!Number.isFinite(timestamp) || Math.abs(Date.now() - timestamp) > 10 * 60_000) throw new UnauthorizedException('Zalo webhook timestamp is outside the replay window.');
