@@ -1,9 +1,9 @@
 'use client';
 
-import { Activity, Bell, CalendarDays, ChevronDown, ContactRound, CreditCard, Crown, FileStack, FileUp, Filter, Inbox, LayoutDashboard, Megaphone, Network, Search, Settings, ShieldCheck, UsersRound, Workflow, Zap } from 'lucide-react';
+import { Activity, Bell, CalendarDays, ChevronDown, ContactRound, CreditCard, Crown, FileStack, FileUp, Filter, Inbox, LayoutDashboard, Megaphone, Menu, Network, Search, Settings, ShieldCheck, UsersRound, Workflow, X, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useSession } from '@/lib/store';
@@ -48,6 +48,7 @@ export function AppShell({ children, title, subtitle, action }: { children: Reac
   const hydrated = useSession((state) => state.hydrated);
   const setWorkspace = useSession((state) => state.setWorkspace);
   const clear = useSession((state) => state.clear);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const workspaces = useQuery({
     queryKey: ['workspaces'],
     queryFn: () => api<WorkspaceItem[]>('/workspaces'),
@@ -72,6 +73,8 @@ export function AppShell({ children, title, subtitle, action }: { children: Reac
     router.replace('/login');
   }, [clear, hydrated, router, workspaces.isError]);
 
+  useEffect(() => setMobileMenuOpen(false), [pathname]);
+
   if (!hydrated) {
     return <div className="grid min-h-screen place-items-center text-sm text-[var(--muted)]">Đang khôi phục phiên đăng nhập...</div>;
   }
@@ -80,12 +83,14 @@ export function AppShell({ children, title, subtitle, action }: { children: Reac
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[244px_1fr]">
-      <aside className="border-r border-[var(--border)] bg-[#090d13]/95 px-4 py-5 lg:sticky lg:top-0 lg:h-screen">
-        <div className="mb-7 flex items-center gap-3 px-2">
+      <aside className="sticky top-0 z-40 border-r border-[var(--border)] bg-[#090d13]/95 px-4 py-4 backdrop-blur lg:h-screen lg:py-5">
+        <div className="flex items-center gap-3 px-2 lg:mb-7">
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-teal-300 to-green-500 text-black"><Zap size={21} strokeWidth={2.6} /></div>
           <div><div className="font-bold tracking-tight">ZaloHub SaaS</div><div className="text-[11px] text-[var(--muted)]">MULTI-TENANT CONTROL</div></div>
+          <button aria-expanded={mobileMenuOpen} aria-label={mobileMenuOpen ? 'Đóng menu điều hướng' : 'Mở menu điều hướng'} className="button-ghost ml-auto !p-2 lg:hidden" onClick={() => setMobileMenuOpen((current) => !current)}>{mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}</button>
         </div>
-        <nav className="space-y-1">
+        <div className={`${mobileMenuOpen ? 'block' : 'hidden'} absolute left-0 right-0 top-full max-h-[calc(100vh-72px)] overflow-y-auto border-b border-[var(--border)] bg-[#090d13] p-4 shadow-2xl lg:static lg:block lg:max-h-none lg:overflow-visible lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none`}>
+        <nav className="space-y-1" onClick={(event) => { if ((event.target as HTMLElement).closest('a')) setMobileMenuOpen(false); }}>
           {me.data?.systemRole === 'SUPER_ADMIN' && <Link href="/admin" className={`mb-2 flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${pathname === '/admin' ? 'bg-amber-300/10 text-amber-200' : 'text-amber-200/80 hover:bg-white/[.035]'}`}><Crown size={17} /><span>Quản trị SaaS</span></Link>}
           <Link href="/subscription" className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${pathname === '/subscription' ? 'bg-teal-400/10 text-teal-300' : 'text-[#9eabb9] hover:bg-white/[.035] hover:text-white'}`}><CreditCard size={17} /><span>Gói thuê & quota</span></Link>
           <Link href="/notifications" className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${pathname === '/notifications' ? 'bg-teal-400/10 text-teal-300' : 'text-[#9eabb9] hover:bg-white/[.035] hover:text-white'}`}><Bell size={17} /><span>Thông báo</span></Link>
@@ -98,6 +103,7 @@ export function AppShell({ children, title, subtitle, action }: { children: Reac
         <div className="mt-8 panel p-3">
           <div className="flex items-center gap-2 text-xs font-semibold"><ShieldCheck size={15} className="text-teal-300" /> Safety layer active</div>
           <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">Consent, suppression, permission và rate-limit đều được kiểm tra trước khi gửi.</p>
+        </div>
         </div>
       </aside>
       <main className="min-w-0">
