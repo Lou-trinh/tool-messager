@@ -20,6 +20,16 @@ describe('ZaloWebhookService', () => {
     vi.restoreAllMocks();
   });
 
+  it('acknowledges an unsigned Zalo reachability probe without configuration or side effects', async () => {
+    delete process.env.ZALO_CLIENT_ID;
+    delete process.env.ZALO_OA_SECRET_KEY;
+    const queueAdd = vi.fn();
+    const service = new ZaloWebhookService({} as PrismaService, { add: queueAdd } as unknown as QueueService);
+
+    await expect(service.accept(Buffer.from('{}'), undefined, {})).resolves.toEqual({ accepted: true, probe: true });
+    expect(queueAdd).not.toHaveBeenCalled();
+  });
+
   it('rejects a webhook whose Zalo signature is invalid', async () => {
     const service = new ZaloWebhookService({} as PrismaService, {} as QueueService);
     const payload: ZaloWebhookPayload = { app_id: 'zalo-app-1', oa_id: 'oa-1', event_name: 'user_send_text', timestamp: Date.now() };

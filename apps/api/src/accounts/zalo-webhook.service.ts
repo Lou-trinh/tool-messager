@@ -18,7 +18,11 @@ export type ZaloWebhookPayload = {
 export class ZaloWebhookService {
   constructor(private readonly prisma: PrismaService, private readonly queue: QueueService) {}
 
-  async accept(rawBody: Buffer | undefined, signature: string | undefined, payload: ZaloWebhookPayload): Promise<{ accepted: true; duplicate?: true }> {
+  async accept(rawBody: Buffer | undefined, signature: string | undefined, payload: ZaloWebhookPayload): Promise<{ accepted: true; duplicate?: true; probe?: true }> {
+    // Zalo Developers checks reachability with an unsigned POST before it lets an
+    // operator save the webhook URL. Acknowledge that probe without persisting or
+    // queueing anything; every actual event below still requires a valid signature.
+    if (!signature) return { accepted: true, probe: true };
     const secret = process.env.ZALO_OA_SECRET_KEY?.trim();
     const appId = process.env.ZALO_CLIENT_ID?.trim();
     if (!secret || !appId) throw new ServiceUnavailableException('ZALO_OA_SECRET_KEY or ZALO_CLIENT_ID is NOT_CONFIGURED.');
