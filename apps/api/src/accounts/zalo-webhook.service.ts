@@ -42,6 +42,10 @@ export class ZaloWebhookService {
     const actualBuffer = Buffer.from(signature);
     const expectedBuffer = Buffer.from(expected);
     if (actualBuffer.length !== expectedBuffer.length || !timingSafeEqual(actualBuffer, expectedBuffer)) {
+      if (process.env.ZALO_WEBHOOK_SETUP_MODE === 'true') {
+        this.logger.warn(`Acknowledged an invalidly signed Zalo webhook while setup mode is enabled (event=${payload.event_name}); no data was persisted.`);
+        return { accepted: true, probe: true };
+      }
       this.logger.warn(`Rejected Zalo webhook: invalid signature (event=${payload.event_name}).`);
       throw new UnauthorizedException('Invalid Zalo webhook signature.');
     }

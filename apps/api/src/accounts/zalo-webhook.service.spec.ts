@@ -9,6 +9,7 @@ describe('ZaloWebhookService', () => {
   const originalClientId = process.env.ZALO_CLIENT_ID;
   const originalClientSecret = process.env.ZALO_CLIENT_SECRET;
   const originalSecret = process.env.ZALO_OA_SECRET_KEY;
+  const originalSetupMode = process.env.ZALO_WEBHOOK_SETUP_MODE;
 
   beforeEach(() => {
     process.env.ZALO_CLIENT_ID = 'zalo-app-1';
@@ -19,6 +20,7 @@ describe('ZaloWebhookService', () => {
     process.env.ZALO_CLIENT_ID = originalClientId;
     process.env.ZALO_CLIENT_SECRET = originalClientSecret;
     process.env.ZALO_OA_SECRET_KEY = originalSecret;
+    process.env.ZALO_WEBHOOK_SETUP_MODE = originalSetupMode;
     vi.restoreAllMocks();
   });
 
@@ -52,6 +54,19 @@ describe('ZaloWebhookService', () => {
     const payload: ZaloWebhookPayload = { app_id: 'zalo-app-1', oa_id: 'oa-1', event_name: 'user_send_text', timestamp: Date.now() };
     const rawBody = Buffer.from(JSON.stringify(payload));
     await expect(service.accept(rawBody, 'mac=invalid', payload)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('acknowledges but never persists an invalid setup probe while setup mode is explicitly enabled', async () => {
+    process.env.ZALO_WEBHOOK_SETUP_MODE = 'true';
+    const prisma = { socialAccount: { findFirst: vi.fn() } } as unknown as PrismaService;
+    const queueAdd = vi.fn();
+    const service = new ZaloWebhookService(prisma, { add: queueAdd } as unknown as QueueService);
+    const payload: ZaloWebhookPayload = { app_id: 'zalo-app-1', oa_id: 'oa-1', event_name: 'user_send_text', timestamp: Date.now() };
+    const rawBody = Buffer.from(JSON.stringify(payload));
+
+    await expect(service.accept(rawBody, 'mac=invalid', payload)).resolves.toEqual({ accepted: true, probe: true });
+    expect(prisma.socialAccount.findFirst).not.toHaveBeenCalled();
+    expect(queueAdd).not.toHaveBeenCalled();
   });
 
   it('accepts a correctly signed duplicate without queueing it twice', async () => {
