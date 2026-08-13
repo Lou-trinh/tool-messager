@@ -17,14 +17,14 @@ export class AccountsService {
   ) {}
 
   async list(userId: string, workspaceId: string): Promise<unknown[]> {
-    await this.workspaces.assertMembership(userId, workspaceId);
+    await this.workspaces.assertPermission(userId, workspaceId, 'account.read');
     await this.zaloOAuth.refreshExpiringForWorkspace(userId, workspaceId);
     const accounts = await this.prisma.socialAccount.findMany({ where: { workspaceId, deletedAt: null }, select: { id: true, platform: true, platformAccountId: true, username: true, displayName: true, avatarUrl: true, status: true, permissions: true, tokenExpiresAt: true, lastSyncAt: true, lastErrorCode: true, createdAt: true } });
     return accounts.map((account) => ({ ...account, capabilities: this.platforms.get(account.platform).capabilities() }));
   }
 
   async create(userId: string, workspaceId: string, input: CreateAccountDto): Promise<unknown> {
-    await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER']);
+    await this.workspaces.assertPermission(userId, workspaceId, 'account.manage');
     const existing = await this.prisma.socialAccount.findUnique({ where: { workspaceId_platform_platformAccountId: { workspaceId, platform: input.platform, platformAccountId: input.platformAccountId } }, select: { id: true } });
     if (!existing) await this.policy.assertAccountCapacity(workspaceId);
     const adapter = this.platforms.get(input.platform);
@@ -38,7 +38,7 @@ export class AccountsService {
   }
 
   async disconnect(userId: string, workspaceId: string, accountId: string): Promise<unknown> {
-    await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER']);
+    await this.workspaces.assertPermission(userId, workspaceId, 'account.manage');
     const account = await this.prisma.socialAccount.findFirst({ where: { id: accountId, workspaceId, deletedAt: null } });
     if (!account) throw new NotFoundException('Social account not found.');
     await this.prisma.platformCredential.deleteMany({ where: { accountId } });
@@ -48,7 +48,7 @@ export class AccountsService {
   }
 
   async sync(userId: string, workspaceId: string, accountId: string): Promise<unknown> {
-    await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR']);
+    await this.workspaces.assertPermission(userId, workspaceId, 'account.manage');
     const account = await this.prisma.socialAccount.findFirst({ where: { id: accountId, workspaceId, deletedAt: null } });
     if (!account) throw new NotFoundException('Social account not found.');
     const result = await this.platforms.get(account.platform).refreshData({ workspaceId, accountId });

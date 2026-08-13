@@ -3,6 +3,7 @@ import compression from 'compression';
 import helmet from 'helmet';
 import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { Express } from 'express';
 import swaggerUi from 'swagger-ui-express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
@@ -24,6 +25,8 @@ function validateEnvironment(): void {
 async function bootstrap(): Promise<void> {
   validateEnvironment();
   const app = await NestFactory.create(AppModule, { logger: new JsonLogger(), rawBody: true });
+  const expressApp = app.getHttpAdapter().getInstance() as Express;
+  expressApp.set('trust proxy', 1);
   app.setGlobalPrefix('api/v1', {
     exclude: [{ path: ZALO_SITE_VERIFICATION_PATH, method: RequestMethod.GET }],
   });

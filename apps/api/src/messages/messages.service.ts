@@ -20,19 +20,19 @@ export class MessagesService {
   ) {}
 
   async conversations(userId: string, workspaceId: string): Promise<unknown[]> {
-    await this.workspaces.assertMembership(userId, workspaceId);
+    await this.workspaces.assertPermission(userId, workspaceId, 'message.read');
     return this.prisma.conversation.findMany({ where: { workspaceId }, include: { account: { select: { id: true, platform: true, displayName: true } }, contact: { select: { id: true, displayName: true, avatarUrl: true, consentStatus: true, suppressed: true } }, messages: { orderBy: { timestamp: 'desc' }, take: 1 } }, orderBy: { lastMessageAt: 'desc' }, take: 100 });
   }
 
   async history(userId: string, workspaceId: string, conversationId: string): Promise<unknown[]> {
-    await this.workspaces.assertMembership(userId, workspaceId);
+    await this.workspaces.assertPermission(userId, workspaceId, 'message.read');
     const conversation = await this.prisma.conversation.findFirst({ where: { id: conversationId, workspaceId } });
     if (!conversation) throw new NotFoundException('Conversation not found.');
     return this.prisma.message.findMany({ where: { conversationId, workspaceId }, include: { attachments: true }, orderBy: { timestamp: 'asc' }, take: 500 });
   }
 
   async send(userId: string, workspaceId: string, input: SendMessageDto): Promise<unknown> {
-    await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR']);
+    await this.workspaces.assertPermission(userId, workspaceId, 'message.send');
     const existing = await this.prisma.message.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
     if (existing) return { message: existing, duplicatePrevented: true };
     await this.policy.assertOutboundAllowed(workspaceId);

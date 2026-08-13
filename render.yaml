@@ -37,6 +37,8 @@ services:
         generateValue: true
       - key: JWT_REFRESH_SECRET
         generateValue: true
+      - key: JWT_ACCESS_TTL_SECONDS
+        value: '900'
       - key: ENCRYPTION_KEY
         generateValue: true
       - key: WEBHOOK_SIGNING_SECRET

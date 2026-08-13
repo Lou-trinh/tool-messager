@@ -16,12 +16,12 @@ export class CampaignsService {
   ) {}
 
   async list(userId: string, workspaceId: string): Promise<unknown[]> {
-    await this.workspaces.assertMembership(userId, workspaceId);
+    await this.workspaces.assertPermission(userId, workspaceId, 'campaign.read');
     return this.prisma.campaign.findMany({ where: { workspaceId, deletedAt: null }, include: { account: { select: { displayName: true, platform: true } }, template: { select: { name: true, version: true } }, _count: { select: { audience: true, messages: true } } }, orderBy: { updatedAt: 'desc' } });
   }
 
   async detail(userId: string, workspaceId: string, campaignId: string): Promise<unknown> {
-    await this.workspaces.assertMembership(userId, workspaceId);
+    await this.workspaces.assertPermission(userId, workspaceId, 'campaign.read');
     const campaign = await this.prisma.campaign.findFirst({
       where: { id: campaignId, workspaceId, deletedAt: null },
       include: { account: true, template: true, audience: { include: { contact: true }, orderBy: { createdAt: 'asc' } }, messages: { include: { message: true }, orderBy: { createdAt: 'desc' } } },
@@ -31,7 +31,7 @@ export class CampaignsService {
   }
 
   async create(userId: string, workspaceId: string, input: CreateCampaignDto): Promise<unknown> {
-    await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER']);
+    await this.workspaces.assertPermission(userId, workspaceId, 'campaign.manage');
     await this.policy.assertCampaignCapacity(workspaceId);
     const [account, template, contacts] = await Promise.all([
       this.prisma.socialAccount.findFirst({ where: { id: input.accountId, workspaceId, deletedAt: null } }),
@@ -59,7 +59,7 @@ export class CampaignsService {
   }
 
   async approve(userId: string, workspaceId: string, campaignId: string): Promise<unknown> {
-    await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER']);
+    await this.workspaces.assertPermission(userId, workspaceId, 'campaign.approve');
     const campaign = await this.prisma.campaign.findFirst({ where: { id: campaignId, workspaceId, deletedAt: null } });
     if (!campaign) throw new NotFoundException('Campaign not found.');
     if (!['DRAFT', 'PENDING_APPROVAL'].includes(campaign.status)) throw new BadRequestException('Campaign cannot be approved from its current status.');
@@ -69,7 +69,7 @@ export class CampaignsService {
   }
 
   async schedule(userId: string, workspaceId: string, campaignId: string, input: ScheduleCampaignDto): Promise<unknown> {
-    await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER']);
+    await this.workspaces.assertPermission(userId, workspaceId, 'campaign.manage');
     const campaign = await this.prisma.campaign.findFirst({ where: { id: campaignId, workspaceId, status: 'APPROVED', deletedAt: null } });
     if (!campaign) throw new BadRequestException('Only approved campaigns can be scheduled.');
     if (input.scheduledAt <= new Date()) throw new BadRequestException('Schedule time must be in the future.');
@@ -77,7 +77,7 @@ export class CampaignsService {
   }
 
   async launch(userId: string, workspaceId: string, campaignId: string): Promise<unknown> {
-    await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER']);
+    await this.workspaces.assertPermission(userId, workspaceId, 'campaign.manage');
     const campaign = await this.prisma.campaign.findFirst({ where: { id: campaignId, workspaceId, deletedAt: null }, include: { account: true, template: true, audience: { include: { contact: true } } } });
     if (!campaign || !campaign.account || !campaign.template) throw new NotFoundException('Campaign, account or template not found.');
     if (!['APPROVED', 'SCHEDULED', 'PAUSED'].includes(campaign.status)) throw new BadRequestException('Campaign must be approved before launch.');
@@ -94,7 +94,7 @@ export class CampaignsService {
   }
 
   async setStatus(userId: string, workspaceId: string, campaignId: string, action: 'pause' | 'resume' | 'cancel'): Promise<unknown> {
-    await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER']);
+    await this.workspaces.assertPermission(userId, workspaceId, 'campaign.manage');
     const campaign = await this.prisma.campaign.findFirst({ where: { id: campaignId, workspaceId, deletedAt: null } });
     if (!campaign) throw new NotFoundException('Campaign not found.');
     const allowed = action === 'pause' ? ['RUNNING', 'SCHEDULED'] : action === 'resume' ? ['PAUSED'] : ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'SCHEDULED', 'RUNNING', 'PAUSED'];

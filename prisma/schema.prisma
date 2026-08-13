@@ -454,19 +454,25 @@ model RolePermission {
 }
 
 model RefreshToken {
-  id          String    @id @default(cuid())
-  userId      String
-  tokenHash   String    @unique
-  sessionName String?
-  ipHash      String?
-  userAgent   String?
-  expiresAt   DateTime
-  revokedAt   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id              String         @id @default(cuid())
+  userId          String
+  familyId        String
+  parentId        String?        @unique
+  tokenHash       String         @unique
+  sessionName     String?
+  ipHash          String?
+  userAgent       String?
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  reuseDetectedAt DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent          RefreshToken?  @relation("RefreshTokenRotation", fields: [parentId], references: [id], onDelete: SetNull)
+  replacement     RefreshToken?  @relation("RefreshTokenRotation")
 
   @@index([userId, revokedAt])
+  @@index([familyId, revokedAt])
 }
 
 model EmailVerificationToken {

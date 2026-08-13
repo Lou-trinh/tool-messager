@@ -49,4 +49,24 @@ describe('tenant isolation', () => {
     await expect(service.detail('tenant-a-user', 'tenant-a')).resolves.toEqual({ id: 'tenant-a' });
     expect(workspaceFindUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'tenant-a' } }));
   });
+
+  it('denies a member when the tenant is suspended', async () => {
+    const prisma = {
+      workspaceMember: { findUnique: vi.fn().mockResolvedValue({ role: 'OWNER', status: 'ACTIVE', workspace: { suspendedAt: new Date(), deletedAt: null } }) },
+      supportSession: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaService;
+    const service = new WorkspacesService(prisma, {} as SubscriptionPolicyService);
+
+    await expect(service.assertMembership('tenant-user', 'suspended-tenant')).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('enforces declared permissions instead of trusting a client role', async () => {
+    const prisma = {
+      workspaceMember: { findUnique: vi.fn().mockResolvedValue({ role: 'VIEWER', status: 'ACTIVE', workspace: { suspendedAt: null, deletedAt: null } }) },
+    } as unknown as PrismaService;
+    const service = new WorkspacesService(prisma, {} as SubscriptionPolicyService);
+
+    await expect(service.assertPermission('viewer', 'tenant-a', 'contact.read')).resolves.toMatchObject({ role: 'VIEWER' });
+    await expect(service.assertPermission('viewer', 'tenant-a', 'contact.manage')).rejects.toBeInstanceOf(ForbiddenException);
+  });
 });

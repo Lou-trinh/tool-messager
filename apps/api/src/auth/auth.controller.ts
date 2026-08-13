@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { createHash } from 'node:crypto';
 import type { Request } from 'express';
 import { AuthService } from './auth.service';
@@ -27,26 +28,31 @@ export class AuthController {
   }
 
   @Post('register')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async register(@Body() body: RegisterDto, @Req() request: Request): Promise<unknown> {
     return { success: true, data: await this.auth.register(body, this.requestMetadata(request)) };
   }
 
   @Post('login')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async login(@Body() body: LoginDto, @Req() request: Request): Promise<unknown> {
     return { success: true, data: await this.auth.login(body, this.requestMetadata(request)) };
   }
 
   @Post('refresh')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async refresh(@Body() body: RefreshDto, @Req() request: Request): Promise<unknown> {
     return { success: true, data: await this.auth.refresh(body.refreshToken, this.requestMetadata(request)) };
   }
 
   @Post('forgot-password')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async forgot(@Body() body: ForgotPasswordDto): Promise<unknown> {
     return { success: true, data: await this.auth.forgotPassword(body) };
   }
 
   @Post('reset-password')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async reset(@Body() body: ResetPasswordDto): Promise<unknown> {
     await this.auth.resetPassword(body);
     return { success: true, data: { reset: true } };

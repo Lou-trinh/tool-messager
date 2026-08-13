@@ -22,7 +22,7 @@ export class ContactsService {
   }
 
   async list(userId: string, workspaceId: string, query: { search?: string; consent?: string; page?: string; limit?: string }): Promise<unknown> {
-    await this.workspaces.assertMembership(userId, workspaceId);
+    await this.workspaces.assertPermission(userId, workspaceId, 'contact.read');
     const page = Math.max(1, Number(query.page ?? 1));
     const limit = Math.min(100, Math.max(1, Number(query.limit ?? 25)));
     const where: Prisma.ContactWhereInput = {
@@ -81,7 +81,7 @@ export class ContactsService {
   }
 
   async create(userId: string, workspaceId: string, input: ContactInputDto): Promise<unknown> {
-    await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR']);
+    await this.workspaces.assertPermission(userId, workspaceId, 'contact.manage');
     const normalizedPhone = this.normalizePhone(input.phone);
     const existing = input.platformUserId
       ? await this.prisma.contact.findUnique({ where: { workspaceId_platform_platformUserId: { workspaceId, platform: input.platform, platformUserId: input.platformUserId } }, select: { id: true } })
@@ -95,7 +95,7 @@ export class ContactsService {
   }
 
   async import(userId: string, workspaceId: string, input: ImportContactsDto): Promise<unknown> {
-    await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR']);
+    await this.workspaces.assertPermission(userId, workspaceId, 'contact.manage');
     if (input.contacts.length > 5_000) throw new BadRequestException('A single import is limited to 5,000 contacts.');
     await this.policy.assertContactCapacity(workspaceId, input.contacts.length);
     const externalId = `contact-import:${workspaceId}:${randomUUID()}`;
@@ -106,7 +106,7 @@ export class ContactsService {
   }
 
   async updateConsent(userId: string, workspaceId: string, contactId: string, input: UpdateConsentDto): Promise<unknown> {
-    await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR']);
+    await this.workspaces.assertPermission(userId, workspaceId, 'contact.manage');
     const contact = await this.prisma.contact.findFirst({ where: { id: contactId, workspaceId, deletedAt: null } });
     if (!contact) throw new NotFoundException('Contact not found.');
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -119,24 +119,24 @@ export class ContactsService {
   }
 
   async createTag(userId: string, workspaceId: string, input: CreateTagDto): Promise<unknown> {
-    await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR']);
+    await this.workspaces.assertPermission(userId, workspaceId, 'contact.manage');
     return this.prisma.tag.upsert({ where: { workspaceId_name: { workspaceId, name: input.name } }, update: { ...(input.color ? { color: input.color } : {}) }, create: { workspaceId, name: input.name, ...(input.color ? { color: input.color } : {}) } });
   }
 
   async assignTag(userId: string, workspaceId: string, contactId: string, tagId: string): Promise<void> {
-    await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR']);
+    await this.workspaces.assertPermission(userId, workspaceId, 'contact.manage');
     const [contact, tag] = await Promise.all([this.prisma.contact.findFirst({ where: { id: contactId, workspaceId } }), this.prisma.tag.findFirst({ where: { id: tagId, workspaceId } })]);
     if (!contact || !tag) throw new NotFoundException('Contact or tag not found.');
     await this.prisma.contactTag.upsert({ where: { contactId_tagId: { contactId, tagId } }, update: {}, create: { contactId, tagId } });
   }
 
   async suppressions(userId: string, workspaceId: string): Promise<unknown[]> {
-    await this.workspaces.assertMembership(userId, workspaceId);
+    await this.workspaces.assertPermission(userId, workspaceId, 'contact.read');
     return this.prisma.suppressionEntry.findMany({ where: { workspaceId, scope: 'TENANT' }, orderBy: { createdAt: 'desc' } });
   }
 
   async suppress(userId: string, workspaceId: string, input: CreateSuppressionDto): Promise<unknown> {
-    await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR']);
+    await this.workspaces.assertPermission(userId, workspaceId, 'contact.manage');
     const normalizedPhone = this.normalizePhone(input.phone);
     if (!normalizedPhone && !input.platformUserId) throw new BadRequestException('A phone or platformUserId is required.');
     if (input.platformUserId && !input.platform) throw new BadRequestException('platform is required with platformUserId.');
@@ -147,7 +147,7 @@ export class ContactsService {
   }
 
   async unsuppress(userId: string, workspaceId: string, entryId: string): Promise<void> {
-    await this.workspaces.assertMembership(userId, workspaceId, ['OWNER', 'ADMIN', 'MANAGER']);
+    await this.workspaces.assertPermission(userId, workspaceId, 'contact.manage');
     const result = await this.prisma.suppressionEntry.deleteMany({ where: { id: entryId, workspaceId, scope: 'TENANT' } });
     if (!result.count) throw new NotFoundException('Suppression entry not found.');
     await this.prisma.auditLog.create({ data: { workspaceId, userId, action: 'SUPPRESSION_REMOVED', resource: 'SuppressionEntry', resourceId: entryId, result: 'SUCCESS' } });

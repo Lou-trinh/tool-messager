@@ -12,7 +12,7 @@ export class AuditController {
 
   @Get()
   async list(@CurrentUser() user: AuthUser, @Param('workspaceId') workspaceId: string, @Query('cursor') cursor?: string): Promise<unknown> {
-    await this.workspaces.assertMembership(user.id, workspaceId, ['OWNER', 'ADMIN', 'MANAGER', 'VIEWER']);
+    await this.workspaces.assertPermission(user.id, workspaceId, 'audit.read');
     const items = await this.prisma.auditLog.findMany({ where: { workspaceId }, take: 100, ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}), orderBy: { createdAt: 'desc' }, include: { user: { select: { displayName: true, email: true } } } });
     return { success: true, data: { items, nextCursor: items.at(-1)?.id ?? null } };
   }

@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../common/prisma.service';
 import type { CreateWorkspaceDto, InviteMemberDto } from './workspaces.dto';
 import { SubscriptionPolicyService } from '../common/subscription-policy.service';
+import { hasPermission, type Permission, type WorkspaceRole } from '@omni/auth';
 
 @Injectable()
 export class WorkspacesService {
@@ -42,7 +43,7 @@ export class WorkspacesService {
 
   async assertMembership(userId: string, workspaceId: string, allowedRoles?: string[]): Promise<{ role: string }> {
     const membership = await this.prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId } }, select: { role: true, status: true, workspace: { select: { suspendedAt: true, deletedAt: true } } } });
-    if (membership?.status === 'ACTIVE' && !membership.workspace.deletedAt) {
+    if (membership?.status === 'ACTIVE' && !membership.workspace.deletedAt && !membership.workspace.suspendedAt) {
       if (allowedRoles && !allowedRoles.includes(membership.role)) throw new ForbiddenException('Workspace role does not allow this operation.');
       return { role: membership.role };
     }
@@ -55,6 +56,14 @@ export class WorkspacesService {
     if (allowedRoles && !allowedRoles.includes(supportRole)) throw new ForbiddenException('Support mode does not allow this operation.');
     await this.prisma.auditLog.create({ data: { workspaceId, userId, action: 'SUPPORT_MODE_ACCESS', resource: 'SupportSession', resourceId: support.id, result: 'SUCCESS' } });
     return { role: supportRole };
+  }
+
+  async assertPermission(userId: string, workspaceId: string, permission: Permission): Promise<{ role: string }> {
+    const access = await this.assertMembership(userId, workspaceId);
+    if (!hasPermission(access.role as WorkspaceRole, permission)) {
+      throw new ForbiddenException(`Workspace permission ${permission} is required.`);
+    }
+    return access;
   }
 
   async detail(userId: string, workspaceId: string): Promise<unknown> {

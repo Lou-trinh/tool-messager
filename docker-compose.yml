@@ -6,6 +6,8 @@ x-app-env: &app-env
   REDIS_URL: redis://redis:6379
   JWT_SECRET: ${JWT_SECRET:-development-only-secret-change-in-production}
   JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-development-refresh-secret-change-in-production}
+  JWT_ACCESS_TTL_SECONDS: ${JWT_ACCESS_TTL_SECONDS:-900}
+  JWT_REFRESH_TTL_DAYS: ${JWT_REFRESH_TTL_DAYS:-30}
   ENCRYPTION_KEY: ${ENCRYPTION_KEY:-replace-with-32-byte-base64-key}
   S3_ENDPOINT: http://minio:9000
   S3_REGION: us-east-1
